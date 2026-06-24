@@ -18,8 +18,8 @@ AZURE_ROLES: dict[str, str] = {
     "Key Vault Secrets Officer": "b86a8fe4-44ce-4948-aee5-eccb2c155cd7",
     "Key Vault Reader": "21090545-7ca7-4776-b22c-e363652d74d4",
     # Data
-    "Azure Event Hubs Data Receiver": "a638d3c8-726d-4896-8ca8-97b8b8aef5e9",
-    "Azure Event Hubs Data Sender": "2b629674-e913-4545-9bef-ff04c7024a8f",
+    "Azure Event Hubs Data Receiver": "a638d3c7-ab3a-418d-83e6-5f17a39d4fde",
+    "Azure Event Hubs Data Sender": "2b629674-e913-4c01-ae53-ef4638d8f975",
     "Azure Service Bus Data Receiver": "4f6d3b9f-027b-4f4c-9142-0e5a2a2247e0",
     "Azure Service Bus Data Sender": "69a216fc-b8fb-44d8-bc22-1f3c2cd27a39",
 }
