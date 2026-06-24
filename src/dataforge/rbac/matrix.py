@@ -94,6 +94,12 @@ RBAC_MATRIX: dict[RbacKey, list[str]] = {
         operation=OperationType.READ,
     ): ["Azure Event Hubs Data Receiver"],
 
+    RbacKey(
+        principal_node_type=NodeType.ADF,
+        scope_node_type=NodeType.EVENTHUB,
+        operation=OperationType.WRITE,
+    ): ["Azure Event Hubs Data Sender"],
+
     # ── Databricks as principal ───────────────────────────────────────────
     RbacKey(
         principal_node_type=NodeType.DATABRICKS,
@@ -162,6 +168,12 @@ RBAC_MATRIX: dict[RbacKey, list[str]] = {
         operation=OperationType.STREAM,
     ): ["Azure Event Hubs Data Receiver"],
 
+    RbacKey(
+        principal_node_type=NodeType.DATABRICKS,
+        scope_node_type=NodeType.EVENTHUB,
+        operation=OperationType.WRITE,
+    ): ["Azure Event Hubs Data Sender"],
+
     # ── Fabric Lakehouse as principal ─────────────────────────────────────
     RbacKey(
         principal_node_type=NodeType.FABRIC_LAKEHOUSE,
@@ -211,6 +223,12 @@ RBAC_MATRIX: dict[RbacKey, list[str]] = {
         scope_node_type=NodeType.EVENTHUB,
         operation=OperationType.STREAM,
     ): ["Azure Event Hubs Data Receiver"],
+
+    RbacKey(
+        principal_node_type=NodeType.AKS,
+        scope_node_type=NodeType.EVENTHUB,
+        operation=OperationType.WRITE,
+    ): ["Azure Event Hubs Data Sender"],
 
     # ── SQL MI as principal ───────────────────────────────────────────────
     RbacKey(

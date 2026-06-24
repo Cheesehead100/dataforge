@@ -58,7 +58,7 @@ class TestLookupHappyPath:
 
     def test_all_matrix_keys_covered_by_parametrize(self):
         """Ensure no RBAC_MATRIX entry was silently skipped by the parametrize list."""
-        assert len(RBAC_MATRIX) >= 33, (
+        assert len(RBAC_MATRIX) >= 36, (
             f"Matrix has {len(RBAC_MATRIX)} entries — fewer than expected. "
             "Was an entry accidentally removed?"
         )

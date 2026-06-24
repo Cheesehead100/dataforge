@@ -101,10 +101,10 @@ class TestResolverUnresolved:
         graph = FlowGraph(
             nodes=[
                 FlowNode(id="adf", type=NodeType.ADF, name="adf"),
-                FlowNode(id="evh", type=NodeType.EVENTHUB, name="evh"),
+                FlowNode(id="aks1", type=NodeType.AKS, name="aks1"),
             ],
             edges=[
-                FlowEdge(source="adf", target="evh", operation=OperationType.WRITE),
+                FlowEdge(source="adf", target="aks1", operation=OperationType.WRITE),
             ],
             metadata=simple_metadata,
         )
