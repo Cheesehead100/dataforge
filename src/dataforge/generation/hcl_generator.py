@@ -33,7 +33,7 @@ class HclGenerator:
         self,
         renderer: Renderer,
         client: anthropic.Anthropic | None,
-        settings: Settings,
+        settings: Settings | None,
     ) -> None:
         self._renderer = renderer
         self._client = client

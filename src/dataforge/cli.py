@@ -311,16 +311,11 @@ def import_adf(
         print(graph.model_dump_json(indent=2))
 
     if do_generate:
-        try:
-            settings = get_settings()
-        except Exception as exc:
-            console.print(f"[red]Configuration error:[/red] {exc}")
-            sys.exit(1)
-
         rbac = RbacResolver().resolve(graph)
         _print_rbac_plan(rbac)
 
-        result = HclGenerator(Renderer(), None, settings).generate(graph, rbac, llm_polish=False)
+        # Template-only generation — no API key required (llm_polish=False, client=None)
+        result = HclGenerator(Renderer(), None, None).generate(graph, rbac, llm_polish=False)
 
         try:
             paths = OutputWriter().write(result.files, output, overwrite=overwrite)
