@@ -19,9 +19,14 @@
 {% endif %}
 
 {% for ra in rbac.assignments %}
+{% set pref = principal_tf_ref(ra.principal_node_id) %}
 resource "azurerm_role_assignment" "{{ ra.terraform_key }}" {
   # {{ ra.rationale }}
-  principal_id         = {{ principal_tf_ref(ra.principal_node_id) }}
+{% if pref.startswith('var.') %}
+  # skip when SP object ID not yet supplied (set after workspace creation)
+  count                = {{ pref }} != "" ? 1 : 0
+{% endif %}
+  principal_id         = {{ pref }}
   role_definition_id   = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/{{ ra.role_definition_id }}"
   scope                = {{ scope_tf_ref(ra.scope_node_id) }}
 }

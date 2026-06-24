@@ -15,11 +15,6 @@ resource "azurerm_storage_account" "{{ node.id }}" {
   infrastructure_encryption_enabled    = true
   min_tls_version                      = "TLS1_2"
 
-  blob_properties {
-    versioning_enabled  = true
-    change_feed_enabled = true
-  }
-
   network_rules {
     default_action = "Allow"
     bypass         = ["AzureServices"]

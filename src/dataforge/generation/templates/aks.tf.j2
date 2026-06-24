@@ -18,7 +18,7 @@ resource "azurerm_kubernetes_cluster" "{{ node.id }}" {
   default_node_pool {
     name       = "system"
     node_count = 2
-    vm_size    = "Standard_D4s_v3"
+    vm_size    = "Standard_D4s_v7"
 
     upgrade_settings {
       max_surge = "10%"
@@ -41,7 +41,7 @@ resource "azurerm_kubernetes_cluster" "{{ node.id }}" {
 resource "azurerm_kubernetes_cluster_node_pool" "{{ node.id }}_spark" {
   name                  = "spark"
   kubernetes_cluster_id = azurerm_kubernetes_cluster.{{ node.id }}.id
-  vm_size               = "Standard_E8s_v3"
+  vm_size               = "Standard_E8s_v7"
   node_count            = 2
   tags                  = var.tags
 
