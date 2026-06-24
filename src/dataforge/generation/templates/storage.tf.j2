@@ -9,7 +9,8 @@ resource "azurerm_storage_account" "{{ node.id }}" {
   is_hns_enabled           = true   # ADLS Gen2 hierarchical namespace
   tags                     = var.tags
 
-  public_network_access_enabled        = false
+  # Set to false + configure network_rules.ip_rules for production (requires private agent or VNet).
+  public_network_access_enabled        = true
   allow_nested_items_to_be_public      = false
   infrastructure_encryption_enabled    = true
   min_tls_version                      = "TLS1_2"
@@ -20,7 +21,7 @@ resource "azurerm_storage_account" "{{ node.id }}" {
   }
 
   network_rules {
-    default_action = "Deny"
+    default_action = "Allow"
     bypass         = ["AzureServices"]
   }
 }
