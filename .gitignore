@@ -17,3 +17,6 @@ htmlcov/
 *.tfstate
 *.tfstate.backup
 .terraform/
+sandbox/terraform.tfvars    # contains subscription ID — keep local only
+sandbox/.terraform/
+sandbox/*.tfstate*

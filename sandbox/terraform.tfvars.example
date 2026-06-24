@@ -1,0 +1,5 @@
+tenant_id       = "YOUR_TENANT_ID"
+subscription_id = "YOUR_SUBSCRIPTION_ID"
+location        = "eastus"
+environment     = "sandbox"
+app_name        = "dftest"
