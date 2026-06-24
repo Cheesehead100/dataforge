@@ -1,0 +1,29 @@
+# ============================================================
+# RBAC Role Assignments
+# Generated deterministically by DataForge — DO NOT EDIT.
+# Source: dataforge rbac matrix v{{ metadata.application_name }}
+# ============================================================
+{% if rbac.warnings %}
+
+# ⚠  Warnings:
+{% for w in rbac.warnings %}
+# - {{ w }}
+{% endfor %}
+{% endif %}
+{% if rbac.unresolved %}
+
+# ✗  Unresolved edges (no RBAC rule — manual action required):
+{% for key in rbac.unresolved %}
+# - {{ key }}
+{% endfor %}
+{% endif %}
+
+{% for ra in rbac.assignments %}
+resource "azurerm_role_assignment" "{{ ra.terraform_key }}" {
+  # {{ ra.rationale }}
+  principal_id         = TODO_REPLACE_WITH_MANAGED_IDENTITY_ID_FOR_{{ ra.principal_node_id | upper }}
+  role_definition_id   = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/{{ ra.role_definition_id }}"
+  scope                = TODO_REPLACE_WITH_RESOURCE_ID_FOR_{{ ra.scope_node_id | upper }}
+}
+
+{% endfor %}

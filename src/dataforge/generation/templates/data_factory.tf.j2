@@ -1,0 +1,24 @@
+{% for node in adf_nodes %}
+resource "azurerm_data_factory" "{{ node.id }}" {
+  name                = "adf-${var.application_name}-${var.environment}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  tags                = var.tags
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  public_network_enabled = false
+
+  github_configuration {
+    # TODO: configure source control or remove this block
+    account_name    = ""
+    branch_name     = "main"
+    git_url         = ""
+    repository_name = ""
+    root_folder     = "/"
+  }
+}
+
+{% endfor %}

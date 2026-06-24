@@ -1,0 +1,77 @@
+{
+  "nodes": [
+    {
+      "id": "raw_adls",
+      "type": "adls",
+      "name": "raw-storage",
+      "properties": {
+        "container": "raw",
+        "format": "parquet"
+      }
+    },
+    {
+      "id": "adf_pipeline",
+      "type": "adf",
+      "name": "adf-sales-pipeline",
+      "properties": {
+        "schedule": "0 6 * * *"
+      }
+    },
+    {
+      "id": "dbw_transform",
+      "type": "databricks",
+      "name": "dbw-transform",
+      "properties": {
+        "runtime": "14.3",
+        "cluster_size": "medium"
+      }
+    },
+    {
+      "id": "fabric_lh",
+      "type": "fabric_lakehouse",
+      "name": "fabric-analytics",
+      "properties": {
+        "workspace": "analytics"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "adf_pipeline",
+      "target": "raw_adls",
+      "operation": "read",
+      "description": "ADF reads Parquet from raw container"
+    },
+    {
+      "source": "adf_pipeline",
+      "target": "dbw_transform",
+      "operation": "trigger",
+      "description": "ADF triggers Databricks notebook"
+    },
+    {
+      "source": "dbw_transform",
+      "target": "raw_adls",
+      "operation": "read",
+      "description": "Databricks reads source data"
+    },
+    {
+      "source": "dbw_transform",
+      "target": "fabric_lh",
+      "operation": "write",
+      "description": "Databricks writes curated data to Fabric Lakehouse"
+    }
+  ],
+  "metadata": {
+    "original_prompt": "Read Parquet from ADLS raw container, trigger Databricks transform, write to Fabric Lakehouse",
+    "location": "eastus",
+    "resource_group": "rg-dataforge-dev",
+    "environment": "dev",
+    "application_name": "sales-pipeline",
+    "data_sensitivity": "internal",
+    "tags": {
+      "managed-by": "dataforge",
+      "environment": "dev",
+      "application": "sales-pipeline"
+    }
+  }
+}

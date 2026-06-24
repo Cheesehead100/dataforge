@@ -1,0 +1,16 @@
+{% for node in fabric_nodes %}
+# Microsoft Fabric Lakehouse
+# Fabric resources are managed via the Microsoft Fabric admin portal or the
+# microsoft/fabric Terraform provider (v1.11+). The capacity must already exist.
+
+resource "fabric_workspace" "{{ node.id }}" {
+  display_name = "${var.application_name}-${var.environment}"
+  # capacity_id = TODO_REPLACE_WITH_FABRIC_CAPACITY_ID
+}
+
+resource "fabric_lakehouse" "{{ node.id }}" {
+  workspace_id = fabric_workspace.{{ node.id }}.id
+  display_name = "${var.application_name}-lakehouse-${var.environment}"
+}
+
+{% endfor %}

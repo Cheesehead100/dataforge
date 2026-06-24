@@ -1,0 +1,29 @@
+{% for node in databricks_nodes %}
+resource "azurerm_databricks_workspace" "{{ node.id }}" {
+  name                          = "dbw-${var.application_name}-${var.environment}"
+  location                      = var.location
+  resource_group_name           = var.resource_group_name
+  sku                           = "premium"
+  tags                          = var.tags
+
+  public_network_access_enabled         = false
+  network_security_group_rules_required = "NoAzureDatabricksRules"
+
+  custom_parameters {
+    no_public_ip        = true
+    virtual_network_id  = TODO_REPLACE_WITH_VNET_ID  # inject via data source or variable
+    private_subnet_name = "snet-dbw-${var.application_name}-private"
+    public_subnet_name  = "snet-dbw-${var.application_name}-public"
+
+    private_subnet_network_security_group_association_id = TODO_REPLACE_WITH_PRIVATE_NSG_ASSOC_ID
+    public_subnet_network_security_group_association_id  = TODO_REPLACE_WITH_PUBLIC_NSG_ASSOC_ID
+  }
+}
+
+# Unity Catalog metastore assignment (requires Databricks account admin)
+# resource "databricks_metastore_assignment" "{{ node.id }}" {
+#   metastore_id = TODO_REPLACE_WITH_METASTORE_ID
+#   workspace_id = azurerm_databricks_workspace.{{ node.id }}.workspace_id
+# }
+
+{% endfor %}

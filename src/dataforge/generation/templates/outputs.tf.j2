@@ -1,0 +1,48 @@
+{% for node in adf_nodes %}
+output "{{ node.id }}_id" {
+  value       = azurerm_data_factory.{{ node.id }}.id
+  description = "Resource ID of Azure Data Factory '{{ node.name }}'"
+}
+
+output "{{ node.id }}_managed_identity_principal_id" {
+  value       = azurerm_data_factory.{{ node.id }}.identity[0].principal_id
+  description = "Principal ID of ADF managed identity — used for RBAC assignments"
+}
+
+{% endfor %}
+{% for node in databricks_nodes %}
+output "{{ node.id }}_id" {
+  value       = azurerm_databricks_workspace.{{ node.id }}.id
+  description = "Resource ID of Databricks workspace '{{ node.name }}'"
+}
+
+output "{{ node.id }}_workspace_url" {
+  value       = "https://${azurerm_databricks_workspace.{{ node.id }}.workspace_url}"
+  description = "URL of Databricks workspace '{{ node.name }}'"
+}
+
+{% endfor %}
+{% for node in adls_nodes %}
+output "{{ node.id }}_id" {
+  value       = azurerm_storage_account.{{ node.id }}.id
+  description = "Resource ID of ADLS Gen2 storage account '{{ node.name }}'"
+}
+
+output "{{ node.id }}_primary_dfs_endpoint" {
+  value       = azurerm_storage_account.{{ node.id }}.primary_dfs_endpoint
+  description = "DFS endpoint for ADLS Gen2 '{{ node.name }}'"
+}
+
+{% endfor %}
+{% for node in kv_nodes %}
+output "{{ node.id }}_id" {
+  value       = azurerm_key_vault.{{ node.id }}.id
+  description = "Resource ID of Key Vault '{{ node.name }}'"
+}
+
+output "{{ node.id }}_uri" {
+  value       = azurerm_key_vault.{{ node.id }}.vault_uri
+  description = "URI of Key Vault '{{ node.name }}'"
+}
+
+{% endfor %}

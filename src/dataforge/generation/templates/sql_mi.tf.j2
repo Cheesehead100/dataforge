@@ -1,0 +1,26 @@
+{% for node in sql_mi_nodes %}
+# SQL Managed Instance — subnet must be dedicated to SQL MI
+resource "azurerm_mssql_managed_instance" "{{ node.id }}" {
+  name                         = "sqlmi-${var.application_name}-${var.environment}"
+  resource_group_name          = var.resource_group_name
+  location                     = var.location
+  license_type                 = "BasePrice"
+  sku_name                     = "GP_Gen5"
+  storage_size_in_gb           = 32
+  subnet_id                    = TODO_REPLACE_WITH_SQL_MI_SUBNET_ID
+  vcores                       = 4
+  tags                         = var.tags
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  # Data-plane logins for Managed Identities (can't be expressed in RBAC):
+  # For each pipeline identity that reads/writes this SQL MI, run:
+  #   CREATE USER [<resource-name>] FROM EXTERNAL PROVIDER;
+  #   ALTER ROLE db_datareader ADD MEMBER [<resource-name>];   -- for read
+  #   ALTER ROLE db_datawriter ADD MEMBER [<resource-name>];   -- for write
+  # See sql_mi_logins.md for generated instructions.
+}
+
+{% endfor %}
