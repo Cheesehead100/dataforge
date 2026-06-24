@@ -2,21 +2,22 @@
 
 **Intent-to-Infrastructure for Azure data engineering stacks.**
 
-Describe your data pipeline in plain English. DataForge generates production-ready Terraform — including every RBAC role assignment — for ADF, Databricks, Microsoft Fabric, ADLS Gen2, Key Vault, and SQL MI.
+Describe your data pipeline in plain English. DataForge generates production-ready Terraform — including every RBAC role assignment — for ADF, Databricks, AKS, ADLS Gen2, Key Vault, EventHub, and SQL MI.
 
 ```bash
 dataforge generate "Read Parquet from ADLS, transform in Databricks, write to Fabric Lakehouse"
 ```
 
 ```
-✓ Wrote 6 files to ./output/
+✓ Wrote 8 files to ./output/
   providers.tf
   variables.tf
   data_factory.tf
   databricks.tf
-  fabric.tf
   storage.tf
-  rbac.tf          ← all 7 role assignments, auto-wired
+  aks.tf           ← OIDC issuer + workload identity + federated credential
+  network.tf       ← VNet, subnets, NSGs for Databricks VNet injection
+  rbac.tf          ← all role assignments, auto-wired from edge graph
   outputs.tf
 ```
 
@@ -28,8 +29,9 @@ Getting RBAC right for Azure data pipelines is the #1 source of friction in IaC 
 
 - ADF managed identity needs **Storage Blob Data Reader** on ADLS
 - ADF managed identity needs **Contributor** on Databricks to trigger jobs
-- Databricks MSI needs **Storage Blob Data Contributor** on Fabric OneLake
-- Key Vault secrets need **Key Vault Secrets User** on every caller
+- AKS workload identity needs **Key Vault Secrets User** to read secrets without credentials
+- Databricks MSI needs **Key Vault Secrets User** on every vault it reads from
+- EventHub readers need **Azure Event Hubs Data Receiver** on the namespace
 
 That's 7+ role assignments for a 3-node pipeline. Nobody gets them all right on the first try.
 
@@ -50,8 +52,7 @@ FlowGraph  ←── Pydantic model: nodes, edges, metadata
    │         ▼
    │    RbacResult    ──▶ rbac.tf   (deterministic, never LLM-polished)
    │
-   ▼ Claude Sonnet (optional polish)
-Jinja2 templates  ──▶ *.tf files
+   ▼ Jinja2 templates  ──▶ *.tf files
    │
    ▼ Checkov
 Security report
@@ -91,9 +92,10 @@ dataforge validate ./my-terraform-dir
 | Node Type | Azure Resource | As Principal | As Scope |
 |-----------|---------------|:---:|:---:|
 | `adf` | Azure Data Factory | ✓ | ✓ |
-| `databricks` | Azure Databricks Workspace | ✓ | ✓ |
+| `databricks` | Azure Databricks Workspace (VNet-injected) | ✓ | ✓ |
+| `aks` | AKS + UAMI + OIDC federated credential | ✓ | — |
 | `fabric_lakehouse` | Microsoft Fabric Lakehouse | ✓ | ✓ |
-| `adls` | Azure Data Lake Storage Gen2 | — | ✓ |
+| `adls` | Azure Data Lake Storage Gen2 (HNS) | — | ✓ |
 | `key_vault` | Azure Key Vault | — | ✓ |
 | `sql_mi` | Azure SQL Managed Instance | ✓ | ✓ |
 | `eventhub` | Azure Event Hub | — | ✓ |
@@ -109,6 +111,36 @@ dataforge validate ./my-terraform-dir
 | `secret_get` | Source reads a secret from Key Vault |
 | `connect` | Data-plane DB connection (SQL MI) |
 | `stream` | Real-time ingest from Event Hub |
+
+---
+
+## AKS Workload Identity
+
+For AKS nodes, DataForge generates the full OIDC federation chain — no secrets, no stored credentials:
+
+```hcl
+# Generated automatically when an aks node appears in the graph
+resource "azurerm_user_assigned_identity" "aks_spark_cluster_workload" { ... }
+
+resource "azurerm_kubernetes_cluster" "aks_spark_cluster" {
+  oidc_issuer_enabled       = true
+  workload_identity_enabled = true
+  ...
+}
+
+resource "azurerm_federated_identity_credential" "aks_spark_cluster_workload" {
+  issuer  = azurerm_kubernetes_cluster.aks_spark_cluster.oidc_issuer_url
+  subject = "system:serviceaccount:${var.namespace}:${var.service_account}"
+  ...
+}
+```
+
+Spark pods authenticate to Azure using `DefaultAzureCredential` — annotate pods with:
+
+```yaml
+azure.workload.identity/use: "true"
+azure.workload.identity/client-id: <workload_client_id output>
+```
 
 ---
 
@@ -153,12 +185,30 @@ pytest tests/unit/test_rbac_matrix.py -v  # RBAC matrix — every entry asserted
 
 All generated Terraform follows security-first defaults:
 
-- `public_network_access_enabled = false` on all storage and ADF
+- `public_network_access_enabled = false` on storage and ADF (use private endpoints in prod)
 - `enable_rbac_authorization = true` on all Key Vaults (no legacy access policies)
-- `infrastructure_encryption_enabled = true` on ADLS (double encryption)
-- `no_public_ip = true` on Databricks custom parameters
+- `infrastructure_encryption_enabled = true` on ADLS (double encryption at rest)
+- `no_public_ip = true` on Databricks (Secure Cluster Connectivity mode)
 - `purge_protection_enabled = true` on Key Vaults
-- Private endpoints scaffolded (subnet IDs marked as TODO for your VNet)
+- `oidc_issuer_enabled = true` + `workload_identity_enabled = true` on AKS (passwordless auth)
+- RBAC count guards on variable-backed principals (skips assignment when SP not yet known)
+
+---
+
+## Live Sandbox Verification (Phase 2)
+
+The full AKS Workload Identity chain was verified end-to-end against a real Azure subscription:
+
+| Component | Verified |
+|-----------|---------|
+| `terraform apply` clean (27 resources) | ✅ |
+| AKS OIDC issuer URL populated | ✅ |
+| Federated credential wired (`system:serviceaccount:spark:spark-sa`) | ✅ |
+| Spark pod authenticated via `DefaultAzureCredential` — no secrets | ✅ |
+| Databricks VNet-injected workspace deployed | ✅ |
+| ADLS Gen2 HNS filesystems (`raw` + `curated`) | ✅ |
+| EventHub Data Receiver RBAC (role ID verified via `az role definition list`) | ✅ |
+| ADF pipeline → Databricks notebook linked service | ✅ |
 
 ---
 
@@ -166,9 +216,9 @@ All generated Terraform follows security-first defaults:
 
 | Phase | Status | Scope |
 |-------|--------|-------|
-| **Phase 1** | 🚧 In progress | ADF + Databricks + Fabric + ADLS — NL → Terraform + RBAC |
-| Phase 2 | Planned | AKS Spark node pools, Helm chart generation, Ansible config |
-| Phase 3 | Planned | ADF pipeline JSON import, Databricks job JSON import |
+| **Phase 1** | ✅ Shipped | ADF + Databricks + Fabric + ADLS — NL → Terraform + RBAC |
+| **Phase 2** | ✅ Shipped | AKS Workload Identity (OIDC), Databricks VNet injection, ADLS HNS, EventHub |
+| Phase 3 | Planned | ADF pipeline JSON import, Databricks job JSON import, Fabric dataset config |
 | Phase 4 | Planned | CI/CD pipeline generation (GitHub Actions / ADO) |
 
 ---
