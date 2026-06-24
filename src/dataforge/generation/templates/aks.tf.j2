@@ -58,9 +58,8 @@ resource "azurerm_kubernetes_cluster_node_pool" "{{ node.id }}_spark" {
 # The Spark pods must be annotated with:
 #   azure.workload.identity/client-id: <workload_client_id output>
 resource "azurerm_federated_identity_credential" "{{ node.id }}_workload" {
-  name                = "fic-${var.application_name}-${var.environment}-spark"
-  resource_group_name = var.resource_group_name
-  parent_id           = azurerm_user_assigned_identity.{{ node.id }}_workload.id
+  name      = "fic-${var.application_name}-${var.environment}-spark"
+  parent_id = azurerm_user_assigned_identity.{{ node.id }}_workload.id
   audience            = ["api://AzureADTokenExchange"]
   issuer              = azurerm_kubernetes_cluster.{{ node.id }}.oidc_issuer_url
   subject             = "system:serviceaccount:${var.{{ node.id }}_workload_namespace}:${var.{{ node.id }}_workload_service_account}"
