@@ -12,6 +12,7 @@ class NodeType(StrEnum):
     SQL_MI = "sql_mi"                  # Azure SQL Managed Instance
     EVENTHUB = "eventhub"             # Azure Event Hub (streaming source)
     BLOB_STORAGE = "blob_storage"     # Azure Blob Storage (non-hierarchical)
+    AKS = "aks"                       # Azure Kubernetes Service (Spark workloads)
 
 
 class OperationType(StrEnum):
@@ -41,4 +42,5 @@ PRINCIPAL_NODE_TYPES: frozenset[NodeType] = frozenset({
     NodeType.DATABRICKS,
     NodeType.FABRIC_LAKEHOUSE,
     NodeType.SQL_MI,
+    NodeType.AKS,
 })

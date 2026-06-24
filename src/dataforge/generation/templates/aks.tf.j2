@@ -1,0 +1,48 @@
+{% for node in aks_nodes %}
+resource "azurerm_kubernetes_cluster" "{{ node.id }}" {
+  name                = "aks-${var.application_name}-${var.environment}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  dns_prefix          = "${var.application_name}-${var.environment}"
+  tags                = var.tags
+
+  default_node_pool {
+    name       = "system"
+    node_count = 2
+    vm_size    = "Standard_D4s_v3"
+
+    upgrade_settings {
+      max_surge = "10%"
+    }
+  }
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  network_profile {
+    network_plugin = "azure"
+    network_policy = "azure"
+  }
+
+  oidc_issuer_enabled       = true
+  workload_identity_enabled = true
+}
+
+resource "azurerm_kubernetes_cluster_node_pool" "{{ node.id }}_spark" {
+  name                  = "spark"
+  kubernetes_cluster_id = azurerm_kubernetes_cluster.{{ node.id }}.id
+  vm_size               = "Standard_E8s_v3"
+  node_count            = 2
+  tags                  = var.tags
+
+  node_labels = {
+    "workload" = "spark"
+  }
+
+  upgrade_settings {
+    max_surge = "10%"
+  }
+}
+
+{% endfor %}

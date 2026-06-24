@@ -32,6 +32,29 @@ variable "tags" {
   }
 }
 
+{% for node in databricks_nodes %}
+variable "{{ node.id }}_sp_object_id" {
+  description = "Object ID of the service principal used by Databricks workspace '{{ node.name }}' for storage and Key Vault RBAC. Create a service principal in your Databricks account or Unity Catalog and supply its Azure object ID."
+  type        = string
+  default     = ""
+}
+
+{% endfor %}
+{% for node in fabric_nodes %}
+variable "{{ node.id }}_sp_object_id" {
+  description = "Object ID of the service principal for Fabric Lakehouse '{{ node.name }}' to access Azure resources."
+  type        = string
+  default     = ""
+}
+
+variable "{{ node.id }}_workspace_id" {
+  description = "Azure resource ID of the Microsoft Fabric workspace for '{{ node.name }}'."
+  type        = string
+  default     = ""
+}
+
+{% endfor %}
+
 data "azurerm_client_config" "current" {}
 
 data "azurerm_resource_group" "rg" {

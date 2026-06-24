@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from jinja2 import Environment, FileSystemLoader, StrictUndefined, TemplateNotFound
 
 from dataforge.constants import NodeType
+from dataforge.generation.tf_refs import principal_tf_ref, scope_tf_ref
 from dataforge.models.flow_graph import FlowGraph
 from dataforge.models.rbac import RbacResult
 from dataforge.models.terraform import TerraformFile
@@ -23,6 +24,7 @@ NODE_TYPE_TEMPLATE: dict[NodeType, str] = {
     NodeType.KEY_VAULT: "key_vault.tf.j2",
     NodeType.SQL_MI: "sql_mi.tf.j2",
     NodeType.EVENTHUB: "eventhub.tf.j2",
+    NodeType.AKS: "aks.tf.j2",
 }
 
 # Templates always rendered regardless of graph contents
@@ -53,6 +55,11 @@ class Renderer:
             content = self.render(template_name, ctx)
             files.append(TerraformFile(filename=filename, content=content))
 
+        # Networking for Databricks VNet injection — rendered before databricks.tf
+        if graph.nodes_of_type(NodeType.DATABRICKS):
+            content = self.render("networking.tf.j2", ctx)
+            files.append(TerraformFile(filename="networking.tf", content=content))
+
         # RBAC — deterministic, never touched by LLM
         rbac_content = self.render("rbac.tf.j2", ctx)
         files.append(TerraformFile(filename="rbac.tf", content=rbac_content))
@@ -65,15 +72,23 @@ class Renderer:
                 rendered_templates.add(template_name)
                 filename = template_name.replace(".j2", "")
                 try:
-                    content = self.render(template_name, {**ctx, "nodes_of_type": node.type})
+                    content = self.render(template_name, ctx)
                     files.append(TerraformFile(filename=filename, content=content))
-                except Exception:
-                    # Template not yet implemented — skip silently in Phase 1
+                except TemplateNotFound:
+                    # Template not yet implemented — skip silently
                     pass
 
         return files
 
     def _build_context(self, graph: FlowGraph, rbac: RbacResult) -> dict:
+        node_by_id = {n.id: n for n in graph.nodes}
+
+        def _principal_ref(node_id: str) -> str:
+            return principal_tf_ref(node_by_id[node_id])
+
+        def _scope_ref(node_id: str) -> str:
+            return scope_tf_ref(node_by_id[node_id])
+
         return {
             "graph": graph,
             "rbac": rbac,
@@ -88,7 +103,13 @@ class Renderer:
             "adf_nodes": graph.nodes_of_type(NodeType.ADF),
             "databricks_nodes": graph.nodes_of_type(NodeType.DATABRICKS),
             "adls_nodes": graph.nodes_of_type(NodeType.ADLS),
+            "blob_nodes": graph.nodes_of_type(NodeType.BLOB_STORAGE),
             "fabric_nodes": graph.nodes_of_type(NodeType.FABRIC_LAKEHOUSE),
             "kv_nodes": graph.nodes_of_type(NodeType.KEY_VAULT),
             "sql_mi_nodes": graph.nodes_of_type(NodeType.SQL_MI),
+            "eventhub_nodes": graph.nodes_of_type(NodeType.EVENTHUB),
+            "aks_nodes": graph.nodes_of_type(NodeType.AKS),
+            "node_by_id": node_by_id,
+            "principal_tf_ref": _principal_ref,
+            "scope_tf_ref": _scope_ref,
         }

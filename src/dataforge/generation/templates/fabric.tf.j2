@@ -5,7 +5,7 @@
 
 resource "fabric_workspace" "{{ node.id }}" {
   display_name = "${var.application_name}-${var.environment}"
-  # capacity_id = TODO_REPLACE_WITH_FABRIC_CAPACITY_ID
+  # capacity_id = var.fabric_capacity_id  # set this variable to your Fabric F-SKU capacity resource ID
 }
 
 resource "fabric_lakehouse" "{{ node.id }}" {

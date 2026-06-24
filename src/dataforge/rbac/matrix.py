@@ -187,6 +187,31 @@ RBAC_MATRIX: dict[RbacKey, list[str]] = {
         operation=OperationType.READ,
     ): ["Reader"],  # +warn: data-plane SQL login
 
+    # ── AKS as principal ──────────────────────────────────────────────────
+    RbacKey(
+        principal_node_type=NodeType.AKS,
+        scope_node_type=NodeType.ADLS,
+        operation=OperationType.READ,
+    ): ["Storage Blob Data Reader"],
+
+    RbacKey(
+        principal_node_type=NodeType.AKS,
+        scope_node_type=NodeType.ADLS,
+        operation=OperationType.WRITE,
+    ): ["Storage Blob Data Contributor"],
+
+    RbacKey(
+        principal_node_type=NodeType.AKS,
+        scope_node_type=NodeType.KEY_VAULT,
+        operation=OperationType.SECRET_GET,
+    ): ["Key Vault Secrets User"],
+
+    RbacKey(
+        principal_node_type=NodeType.AKS,
+        scope_node_type=NodeType.EVENTHUB,
+        operation=OperationType.STREAM,
+    ): ["Azure Event Hubs Data Receiver"],
+
     # ── SQL MI as principal ───────────────────────────────────────────────
     RbacKey(
         principal_node_type=NodeType.SQL_MI,

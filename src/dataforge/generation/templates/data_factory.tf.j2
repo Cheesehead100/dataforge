@@ -10,15 +10,7 @@ resource "azurerm_data_factory" "{{ node.id }}" {
   }
 
   public_network_enabled = false
-
-  github_configuration {
-    # TODO: configure source control or remove this block
-    account_name    = ""
-    branch_name     = "main"
-    git_url         = ""
-    repository_name = ""
-    root_folder     = "/"
-  }
+  # Source control: add a github_configuration or vsts_configuration block if required.
 }
 
 {% endfor %}

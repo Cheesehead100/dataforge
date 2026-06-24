@@ -46,3 +46,32 @@ output "{{ node.id }}_uri" {
 }
 
 {% endfor %}
+{% for node in eventhub_nodes %}
+output "{{ node.id }}_namespace_id" {
+  value       = azurerm_eventhub_namespace.{{ node.id }}.id
+  description = "Resource ID of Event Hub Namespace '{{ node.name }}'"
+}
+
+output "{{ node.id }}_eventhub_name" {
+  value       = azurerm_eventhub.{{ node.id }}.name
+  description = "Name of the Event Hub in namespace '{{ node.name }}'"
+}
+
+{% endfor %}
+{% for node in aks_nodes %}
+output "{{ node.id }}_id" {
+  value       = azurerm_kubernetes_cluster.{{ node.id }}.id
+  description = "Resource ID of AKS cluster '{{ node.name }}'"
+}
+
+output "{{ node.id }}_oidc_issuer_url" {
+  value       = azurerm_kubernetes_cluster.{{ node.id }}.oidc_issuer_url
+  description = "OIDC issuer URL for Workload Identity federation"
+}
+
+output "{{ node.id }}_kubelet_object_id" {
+  value       = azurerm_kubernetes_cluster.{{ node.id }}.kubelet_identity[0].object_id
+  description = "Object ID of AKS kubelet identity — used for RBAC assignments"
+}
+
+{% endfor %}

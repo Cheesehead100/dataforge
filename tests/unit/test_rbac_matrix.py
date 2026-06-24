@@ -44,6 +44,11 @@ class TestLookupHappyPath:
         (NodeType.SQL_MI, NodeType.ADLS, OperationType.READ, "Storage Blob Data Reader"),
         (NodeType.SQL_MI, NodeType.ADLS, OperationType.WRITE, "Storage Blob Data Contributor"),
         (NodeType.SQL_MI, NodeType.KEY_VAULT, OperationType.SECRET_GET, "Key Vault Secrets User"),
+        # AKS as principal
+        (NodeType.AKS, NodeType.ADLS, OperationType.READ, "Storage Blob Data Reader"),
+        (NodeType.AKS, NodeType.ADLS, OperationType.WRITE, "Storage Blob Data Contributor"),
+        (NodeType.AKS, NodeType.KEY_VAULT, OperationType.SECRET_GET, "Key Vault Secrets User"),
+        (NodeType.AKS, NodeType.EVENTHUB, OperationType.STREAM, "Azure Event Hubs Data Receiver"),
     ])
     def test_role_present_in_result(self, principal, scope, operation, expected_role):
         roles = lookup(principal, scope, operation)
@@ -53,7 +58,7 @@ class TestLookupHappyPath:
 
     def test_all_matrix_keys_covered_by_parametrize(self):
         """Ensure no RBAC_MATRIX entry was silently skipped by the parametrize list."""
-        assert len(RBAC_MATRIX) >= 29, (
+        assert len(RBAC_MATRIX) >= 33, (
             f"Matrix has {len(RBAC_MATRIX)} entries — fewer than expected. "
             "Was an entry accidentally removed?"
         )
