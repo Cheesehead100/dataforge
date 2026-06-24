@@ -99,7 +99,7 @@ class TestRbacRefs:
         rbac = files["rbac.tf"]
         assert "var.dbw_transform_sp_object_id" in rbac
 
-    def test_aks_principal_uses_kubelet_identity(self):
+    def test_aks_principal_uses_workload_identity_uami(self):
         graph = FlowGraph(
             nodes=[
                 FlowNode(id="aks1", type=NodeType.AKS, name="aks"),
@@ -109,7 +109,7 @@ class TestRbacRefs:
             metadata=_meta(),
         )
         files = _render(graph)
-        assert "azurerm_kubernetes_cluster.aks1.kubelet_identity[0].object_id" in files["rbac.tf"]
+        assert "azurerm_user_assigned_identity.aks1_workload.principal_id" in files["rbac.tf"]
 
 
 # ── networking.tf rendered iff Databricks present ─────────────────────────────
@@ -248,4 +248,5 @@ class TestOutputs:
         files = _render(graph)
         outputs = files["outputs.tf"]
         assert "aks1_oidc_issuer_url" in outputs
-        assert "aks1_kubelet_object_id" in outputs
+        assert "aks1_workload_client_id" in outputs
+        assert "aks1_workload_principal_id" in outputs

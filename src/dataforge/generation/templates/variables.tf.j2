@@ -32,6 +32,33 @@ variable "tags" {
   }
 }
 
+{% if databricks_nodes %}
+# ── Networking (Databricks VNet injection) ────────────────────────────────────
+variable "vnet_address_space" {
+  description = "CIDR block for the VNet used by Databricks VNet injection"
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+variable "dbw_private_subnet_cidr" {
+  description = "CIDR for the Databricks private subnet"
+  type        = string
+  default     = "10.0.1.0/24"
+}
+
+variable "dbw_public_subnet_cidr" {
+  description = "CIDR for the Databricks public subnet"
+  type        = string
+  default     = "10.0.2.0/24"
+}
+
+variable "pe_subnet_cidr" {
+  description = "CIDR for the private-endpoint subnet"
+  type        = string
+  default     = "10.0.3.0/24"
+}
+
+{% endif %}
 {% for node in databricks_nodes %}
 variable "{{ node.id }}_sp_object_id" {
   description = "Object ID of the service principal used by Databricks workspace '{{ node.name }}' for storage and Key Vault RBAC. Create a service principal in your Databricks account or Unity Catalog and supply its Azure object ID."
@@ -51,6 +78,21 @@ variable "{{ node.id }}_workspace_id" {
   description = "Azure resource ID of the Microsoft Fabric workspace for '{{ node.name }}'."
   type        = string
   default     = ""
+}
+
+{% endfor %}
+{% for node in aks_nodes %}
+# ── AKS Workload Identity: {{ node.name }} ────────────────────────────────────
+variable "{{ node.id }}_workload_namespace" {
+  description = "Kubernetes namespace of the ServiceAccount used by Spark pods in '{{ node.name }}'"
+  type        = string
+  default     = "spark"
+}
+
+variable "{{ node.id }}_workload_service_account" {
+  description = "Kubernetes ServiceAccount name for Spark pods in '{{ node.name }}'"
+  type        = string
+  default     = "spark-sa"
 }
 
 {% endfor %}

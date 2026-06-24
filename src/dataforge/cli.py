@@ -26,6 +26,7 @@ from dataforge.generation.hcl_generator import HclGenerator
 from dataforge.generation.renderer import Renderer
 from dataforge.models.flow_graph import FlowMetadata
 from dataforge.output.writer import OutputWriter
+from dataforge.parsing.adf_importer import AdfImporter, AdfImportError
 from dataforge.parsing.intent_parser import IntentParser, ParseError
 from dataforge.rbac.resolver import RbacResolver
 from dataforge.validation.checkov_runner import CheckovRunner
@@ -162,6 +163,71 @@ def validate(directory: Path) -> None:
 @cli.command()
 @click.argument("description")
 @click.option("--region", default="eastus", show_default=True)
+@click.option("--resource-group", default="rg-dataforge", show_default=True)
+@click.option("--env", type=click.Choice(["dev", "test", "prod"]), default="dev", show_default=True)
+@click.option(
+    "--compare-azure",
+    is_flag=True,
+    help="Compare planned RBAC against current role assignments in Azure (requires az CLI login)",
+)
+@click.option("--subscription-id", default=None, help="Azure subscription ID for --compare-azure")
+def plan(
+    description: str,
+    region: str,
+    resource_group: str,
+    env: str,
+    compare_azure: bool,
+    subscription_id: str | None,
+) -> None:
+    """Parse a description and show the planned RBAC assignments without writing files.
+
+    With --compare-azure, fetches existing role assignments from Azure and
+    shows a diff (approximate — planned refs are expressions, not resolved IDs).
+
+    \b
+    Example:
+        dataforge plan "ADF reads ADLS and triggers Databricks" --compare-azure --resource-group rg-myapp
+    """
+    try:
+        settings = get_settings()
+    except Exception as exc:
+        console.print(f"[red]Configuration error:[/red] {exc}")
+        sys.exit(1)
+
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key.get_secret_value())
+    overrides = {"location": region, "environment": env, "resource_group": resource_group}
+
+    with console.status("[bold cyan]Parsing description…"):
+        try:
+            graph = IntentParser(client, settings).parse(description, overrides)
+        except ParseError as exc:
+            console.print(f"[red]{exc}[/red]")
+            sys.exit(1)
+
+    rbac = RbacResolver().resolve(graph)
+
+    # ── Nodes summary ─────────────────────────────────────────────────────────
+    console.print("\n[bold]Nodes detected:[/bold]")
+    for n in graph.nodes:
+        console.print(f"  [{n.id}] {n.type.value}: {n.name}")
+
+    # ── Planned RBAC table ───────────────────────────────────────────────────
+    _print_rbac_plan(rbac)
+
+    if rbac.warnings:
+        for w in rbac.warnings:
+            console.print(f"  [yellow]WARN[/yellow] {w}")
+
+    console.print(f"\n[bold]Planned:[/bold] {len(rbac.assignments)} role assignments, {len(rbac.unresolved)} unresolved")
+
+    # ── Azure comparison ──────────────────────────────────────────────────────
+    if compare_azure:
+        _compare_with_azure(rbac, resource_group, subscription_id)
+
+
+@cli.command()
+@click.argument("description")
+@click.option("--region", default="eastus", show_default=True)
 @click.option("--env", default="dev", show_default=True)
 def explain(description: str, region: str, env: str) -> None:
     """Parse a description and show the FlowGraph + RBAC plan without writing files."""
@@ -197,6 +263,80 @@ def explain(description: str, region: str, env: str) -> None:
     _print_rbac_plan(rbac)
 
 
+@cli.command("import-adf")
+@click.argument("json_file", type=click.Path(exists=True, path_type=Path))
+@click.option("--output-json", is_flag=True, help="Print FlowGraph as JSON (pipe to dataforge generate)")
+@click.option("--generate", "do_generate", is_flag=True, help="Also generate Terraform from the imported graph")
+@click.option("-o", "--output", type=click.Path(path_type=Path), default=Path("./output"), show_default=True)
+@click.option("--overwrite", is_flag=True)
+def import_adf(
+    json_file: Path,
+    output_json: bool,
+    do_generate: bool,
+    output: Path,
+    overwrite: bool,
+) -> None:
+    """Import an ADF ARM export JSON and convert it to a DataForge FlowGraph.
+
+    Parses linked services and pipeline activities into nodes and edges.
+    Use --output-json to print the FlowGraph for inspection.
+    Use --generate to immediately render Terraform from the imported graph.
+
+    \b
+    Example:
+        dataforge import-adf factory-export.json --output-json
+        dataforge import-adf factory-export.json --generate -o ./tf-output
+    """
+    try:
+        graph = AdfImporter().import_from_file(json_file)
+    except AdfImportError as exc:
+        console.print(f"[red]Import failed:[/red] {exc}")
+        sys.exit(1)
+
+    console.print(
+        Panel(
+            f"[bold]Imported FlowGraph[/bold]: {len(graph.nodes)} nodes · {len(graph.edges)} edges\n"
+            + "\n".join(f"  - {n.type.value}: [cyan]{n.name}[/cyan]" for n in graph.nodes),
+            title=f"ADF Import — {json_file.name}",
+            border_style="blue",
+        )
+    )
+
+    if graph.edges:
+        console.print("[bold]Edges:[/bold]")
+        for e in graph.edges:
+            console.print(f"  {e.source} -[{e.operation}]-> {e.target}")
+
+    if output_json:
+        print(graph.model_dump_json(indent=2))
+
+    if do_generate:
+        try:
+            settings = get_settings()
+        except Exception as exc:
+            console.print(f"[red]Configuration error:[/red] {exc}")
+            sys.exit(1)
+
+        rbac = RbacResolver().resolve(graph)
+        _print_rbac_plan(rbac)
+
+        result = HclGenerator(Renderer(), None, settings).generate(graph, rbac, llm_polish=False)
+
+        try:
+            paths = OutputWriter().write(result.files, output, overwrite=overwrite)
+        except FileExistsError as exc:
+            console.print(f"[red]{exc}[/red]")
+            sys.exit(1)
+
+        console.print(f"\n[green]OK[/green] Wrote {len(paths)} files to [cyan]{output}/[/cyan]")
+        for p in paths:
+            console.print(f"  {p.name}")
+
+        if result.warnings:
+            for w in result.warnings:
+                console.print(f"  [yellow]WARN[/yellow] {w}")
+
+
 # ── helpers ────────────────────────────────────────────────────────────────
 
 def _print_rbac_plan(rbac) -> None:  # type: ignore[no-untyped-def]
@@ -224,6 +364,59 @@ def _print_checkov_report(report) -> None:  # type: ignore[no-untyped-def]
             console.print(f"  [red]FAIL[/red] {f.check_id} {f.severity} - {f.resource} ({f.file_path})")
         if len(report.failed_checks) > 10:
             console.print(f"  … and {len(report.failed_checks) - 10} more")
+
+
+def _compare_with_azure(rbac, resource_group: str, subscription_id: str | None) -> None:  # type: ignore[no-untyped-def]
+    import subprocess
+
+    console.print("\n[bold cyan]Fetching existing Azure role assignments…[/bold cyan]")
+    cmd = ["az", "role", "assignment", "list", "--resource-group", resource_group, "--output", "json"]
+    if subscription_id:
+        cmd += ["--subscription", subscription_id]
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
+        console.print("[yellow]WARN[/yellow] 'az' CLI not found. Install Azure CLI to use --compare-azure.")
+        return
+    except subprocess.TimeoutExpired:
+        console.print("[red]Timeout fetching Azure role assignments.[/red]")
+        return
+
+    if proc.returncode != 0:
+        console.print(f"[red]az CLI error:[/red] {proc.stderr.strip()}")
+        return
+
+    try:
+        existing: list[dict] = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        console.print("[red]Could not parse az CLI output.[/red]")
+        return
+
+    # Index existing roles by role definition name (display name)
+    existing_roles: set[str] = {
+        a.get("roleDefinitionName", "") for a in existing if a.get("roleDefinitionName")
+    }
+    planned_roles: set[str] = {ra.role_name for ra in rbac.assignments}
+
+    already_covered = planned_roles & existing_roles
+    not_yet_created = planned_roles - existing_roles
+    unmanaged_in_rg = existing_roles - planned_roles
+
+    table = Table(title=f"RBAC Delta — {resource_group}", show_header=True, header_style="bold")
+    table.add_column("Status", width=10)
+    table.add_column("Role Name")
+    table.add_column("Note", style="dim")
+    for r in sorted(not_yet_created):
+        table.add_row("[yellow]+ PLANNED[/yellow]", r, "DataForge will create this")
+    for r in sorted(already_covered):
+        table.add_row("[green]= EXISTS[/green]", r, "Already present in resource group")
+    for r in sorted(unmanaged_in_rg):
+        table.add_row("[dim]? EXTERNAL[/dim]", r, "Exists but not in DataForge plan")
+    console.print(table)
+    console.print(
+        "[dim]Note: comparison is by role name only — scopes and principals differ per resource.[/dim]"
+    )
 
 
 def _configure_logging(verbosity: int) -> None:

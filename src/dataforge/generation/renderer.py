@@ -30,6 +30,9 @@ NODE_TYPE_TEMPLATE: dict[NodeType, str] = {
 # Templates always rendered regardless of graph contents
 ALWAYS_RENDER = ["providers.tf.j2", "variables.tf.j2", "outputs.tf.j2"]
 
+# Non-Terraform files always rendered (CI pipeline, etc.)
+ALWAYS_RENDER_EXTRA = ["azure-pipelines.yml.j2"]
+
 
 class Renderer:
     def __init__(self) -> None:
@@ -63,6 +66,12 @@ class Renderer:
         # RBAC — deterministic, never touched by LLM
         rbac_content = self.render("rbac.tf.j2", ctx)
         files.append(TerraformFile(filename="rbac.tf", content=rbac_content))
+
+        # CI / extra files (YAML, etc.)
+        for template_name in ALWAYS_RENDER_EXTRA:
+            filename = template_name.replace(".j2", "")
+            content = self.render(template_name, ctx)
+            files.append(TerraformFile(filename=filename, content=content))
 
         # Per-node-type resource files (deduplicated by template)
         rendered_templates: set[str] = set()

@@ -28,9 +28,9 @@ class TestPrincipalTfRef:
         node = _node("sqlmi", NodeType.SQL_MI)
         assert principal_tf_ref(node) == "azurerm_mssql_managed_instance.sqlmi.identity[0].principal_id"
 
-    def test_aks_kubelet_identity(self):
+    def test_aks_workload_identity_uami(self):
         node = _node("aks1", NodeType.AKS)
-        assert principal_tf_ref(node) == "azurerm_kubernetes_cluster.aks1.kubelet_identity[0].object_id"
+        assert principal_tf_ref(node) == "azurerm_user_assigned_identity.aks1_workload.principal_id"
 
     def test_non_principal_raises(self):
         node = _node("adls1", NodeType.ADLS)

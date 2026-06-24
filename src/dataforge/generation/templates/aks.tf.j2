@@ -1,4 +1,13 @@
 {% for node in aks_nodes %}
+# ── AKS cluster: {{ node.name }} ──────────────────────────────────────────────
+
+resource "azurerm_user_assigned_identity" "{{ node.id }}_workload" {
+  name                = "id-${var.application_name}-${var.environment}-workload"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+  tags                = var.tags
+}
+
 resource "azurerm_kubernetes_cluster" "{{ node.id }}" {
   name                = "aks-${var.application_name}-${var.environment}"
   location            = var.location
@@ -43,6 +52,18 @@ resource "azurerm_kubernetes_cluster_node_pool" "{{ node.id }}_spark" {
   upgrade_settings {
     max_surge = "10%"
   }
+}
+
+# Federated credential: lets the Kubernetes ServiceAccount acquire tokens as the UAMI.
+# The Spark pods must be annotated with:
+#   azure.workload.identity/client-id: <workload_client_id output>
+resource "azurerm_federated_identity_credential" "{{ node.id }}_workload" {
+  name                = "fic-${var.application_name}-${var.environment}-spark"
+  resource_group_name = var.resource_group_name
+  parent_id           = azurerm_user_assigned_identity.{{ node.id }}_workload.id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = azurerm_kubernetes_cluster.{{ node.id }}.oidc_issuer_url
+  subject             = "system:serviceaccount:${var.{{ node.id }}_workload_namespace}:${var.{{ node.id }}_workload_service_account}"
 }
 
 {% endfor %}

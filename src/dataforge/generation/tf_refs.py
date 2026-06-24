@@ -26,8 +26,8 @@ def principal_tf_ref(node: FlowNode) -> str:
         case NodeType.SQL_MI:
             return f"azurerm_mssql_managed_instance.{node.id}.identity[0].principal_id"
         case NodeType.AKS:
-            # Kubelet identity holds the object_id used for node-level resource access.
-            return f"azurerm_kubernetes_cluster.{node.id}.kubelet_identity[0].object_id"
+            # Workload Identity UAMI — pod-level access via OIDC federated credential.
+            return f"azurerm_user_assigned_identity.{node.id}_workload.principal_id"
         case _:
             raise ValueError(
                 f"Node type '{node.type}' is not in PRINCIPAL_NODE_TYPES — "

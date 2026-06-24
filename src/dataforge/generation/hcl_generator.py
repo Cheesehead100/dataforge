@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import anthropic
 
@@ -15,8 +16,9 @@ from dataforge.models.terraform import GenerationResult, TerraformFile
 
 logger = logging.getLogger(__name__)
 
-# RBAC file is always deterministic — never polished by LLM
+# These files are deterministic or non-HCL — never polished by LLM
 _SKIP_LLM_FILES = {"rbac.tf", "providers.tf", "variables.tf"}
+_SKIP_LLM_EXTENSIONS = {".yml", ".yaml"}
 
 
 class HclGenerator:
@@ -67,7 +69,7 @@ class HclGenerator:
     ) -> list[TerraformFile]:
         polished: list[TerraformFile] = []
         for tf_file in files:
-            if tf_file.filename in _SKIP_LLM_FILES:
+            if tf_file.filename in _SKIP_LLM_FILES or Path(tf_file.filename).suffix in _SKIP_LLM_EXTENSIONS:
                 polished.append(tf_file)
                 continue
 

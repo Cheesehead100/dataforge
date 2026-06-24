@@ -69,9 +69,14 @@ output "{{ node.id }}_oidc_issuer_url" {
   description = "OIDC issuer URL for Workload Identity federation"
 }
 
-output "{{ node.id }}_kubelet_object_id" {
-  value       = azurerm_kubernetes_cluster.{{ node.id }}.kubelet_identity[0].object_id
-  description = "Object ID of AKS kubelet identity — used for RBAC assignments"
+output "{{ node.id }}_workload_client_id" {
+  value       = azurerm_user_assigned_identity.{{ node.id }}_workload.client_id
+  description = "Client ID of the Workload Identity UAMI — annotate Spark pods with azure.workload.identity/client-id"
+}
+
+output "{{ node.id }}_workload_principal_id" {
+  value       = azurerm_user_assigned_identity.{{ node.id }}_workload.principal_id
+  description = "Principal ID of the Workload Identity UAMI — used for RBAC assignments"
 }
 
 {% endfor %}

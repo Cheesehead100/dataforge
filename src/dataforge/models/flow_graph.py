@@ -47,7 +47,7 @@ class FlowMetadata(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    original_prompt: str = Field(description="Raw natural-language input from the user")
+    original_prompt: str = Field(default="", description="Raw natural-language input from the user")
     location: str = Field(default="eastus", description="Azure region (e.g. eastus, westeurope)")
     resource_group: str = Field(default="rg-dataforge", description="Target Azure resource group")
     environment: str = Field(default="dev", description="Deployment environment: dev / test / prod")
@@ -65,7 +65,7 @@ class FlowGraph(BaseModel):
     model_config = {"extra": "forbid"}
 
     nodes: list[FlowNode] = Field(min_length=1)
-    edges: list[FlowEdge] = Field(min_length=1)
+    edges: list[FlowEdge] = Field(default_factory=list)
     metadata: FlowMetadata
 
     # ------------------------------------------------------------------ validators
