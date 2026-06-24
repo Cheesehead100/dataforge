@@ -26,28 +26,11 @@ resource "azurerm_role_assignment" "adf__kv__key_vault_secrets_user" {
   scope                = azurerm_key_vault.main.id
 }
 
-# Databricks managed identity → ADLS (reads source + writes curated)
-resource "azurerm_role_assignment" "databricks__adls__storage_blob_data_reader" {
-  # Databricks cluster MSI reads source data from ADLS
-  principal_id         = azurerm_databricks_workspace.main.storage_account_identity[0].principal_id
-  role_definition_id   = "/subscriptions/${var.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"
-  scope                = azurerm_storage_account.main.id
-}
-
-resource "azurerm_role_assignment" "databricks__adls__storage_blob_data_contributor" {
-  # Databricks cluster MSI writes curated data to ADLS
-  principal_id         = azurerm_databricks_workspace.main.storage_account_identity[0].principal_id
-  role_definition_id   = "/subscriptions/${var.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/ba92f5b4-2d11-453d-a403-e96b0029c9fe"
-  scope                = azurerm_storage_account.main.id
-}
-
-# Databricks managed identity → Key Vault (reads secrets)
-resource "azurerm_role_assignment" "databricks__kv__key_vault_secrets_user" {
-  # Databricks cluster MSI reads secrets from Key Vault
-  principal_id         = azurerm_databricks_workspace.main.storage_account_identity[0].principal_id
-  role_definition_id   = "/subscriptions/${var.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6"
-  scope                = azurerm_key_vault.main.id
-}
+# Databricks cluster → ADLS / Key Vault RBAC
+# NOTE: storage_account_identity is only populated when CMK is enabled for
+# managed services — it is empty on a standard workspace. Cluster-level ADLS
+# access requires Unity Catalog credential vending or a service principal;
+# add those in Phase 2 after Unity Catalog is provisioned.
 
 # Current user → Key Vault admin (so you can add secrets manually during testing)
 resource "azurerm_role_assignment" "current_user__kv__admin" {

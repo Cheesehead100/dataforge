@@ -6,7 +6,7 @@ resource "azurerm_key_vault" "main" {
   sku_name                      = "standard"
   tags                          = local.tags
 
-  enable_rbac_authorization     = true
+  rbac_authorization_enabled    = true
   purge_protection_enabled      = false  # sandbox: allow clean destroy
   soft_delete_retention_days    = 7      # sandbox: minimum retention
   public_network_access_enabled = false

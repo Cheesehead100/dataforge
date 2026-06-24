@@ -87,6 +87,19 @@ resource "azurerm_network_security_group" "dbw_private" {
     source_address_prefix      = "VirtualNetwork"
     destination_address_prefix = "VirtualNetwork"
   }
+
+  # Required by the NetworkIntentPolicy Azure attaches to Databricks-delegated subnets
+  security_rule {
+    name                       = "databricks-worker-to-eventhub"
+    priority                   = 140
+    direction                  = "Outbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "9093"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "EventHub"
+  }
 }
 
 resource "azurerm_network_security_group" "dbw_public" {
@@ -165,6 +178,19 @@ resource "azurerm_network_security_group" "dbw_public" {
     destination_port_range     = "*"
     source_address_prefix      = "VirtualNetwork"
     destination_address_prefix = "VirtualNetwork"
+  }
+
+  # Required by the NetworkIntentPolicy Azure attaches to Databricks-delegated subnets
+  security_rule {
+    name                       = "databricks-worker-to-eventhub"
+    priority                   = 140
+    direction                  = "Outbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "9093"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "EventHub"
   }
 }
 

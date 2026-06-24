@@ -8,7 +8,7 @@ resource "azurerm_storage_account" "main" {
   is_hns_enabled           = true    # ADLS Gen2
   tags                     = local.tags
 
-  public_network_access_enabled     = false
+  public_network_access_enabled     = true   # sandbox: allow terraform data-plane ops (HNS filesystem create)
   allow_nested_items_to_be_public   = false
   infrastructure_encryption_enabled = true
   min_tls_version                   = "TLS1_2"
@@ -19,7 +19,7 @@ resource "azurerm_storage_account" "main" {
   }
 
   network_rules {
-    default_action = "Deny"
+    default_action = "Allow"   # sandbox: no real data; private endpoints still preferred path
     bypass         = ["AzureServices"]
   }
 }

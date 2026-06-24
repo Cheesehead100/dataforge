@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import sys
 from pathlib import Path
+
+# Ensure UTF-8 output on Windows regardless of the active code page.
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 
 import anthropic
 import click
@@ -23,7 +30,7 @@ from dataforge.parsing.intent_parser import IntentParser, ParseError
 from dataforge.rbac.resolver import RbacResolver
 from dataforge.validation.checkov_runner import CheckovRunner
 
-console = Console()
+console = Console(legacy_windows=False)  # use Python I/O path; avoids CP1252 LegacyWindowsTerm
 
 
 @click.group()
@@ -32,7 +39,7 @@ def cli() -> None:
     """DataForge — Intent-to-Infrastructure for Azure data engineering stacks.
 
     Converts natural-language data flow descriptions into production-ready
-    Terraform (ADF · Databricks · Fabric · ADLS · Key Vault) with automatic
+    Terraform (ADF / Databricks / Fabric / ADLS / Key Vault) with automatic
     RBAC role assignment wiring.
     """
 
@@ -45,7 +52,7 @@ def cli() -> None:
 @click.option("--env", type=click.Choice(["dev", "test", "prod"]), default="dev", show_default=True)
 @click.option("--app-name", default="dataforge", show_default=True, help="Application name used in resource naming")
 @click.option("--no-validate", is_flag=True, help="Skip Checkov validation")
-@click.option("--no-llm-polish", is_flag=True, help="Skeleton only — no Sonnet polish pass")
+@click.option("--no-llm-polish", is_flag=True, help="Skeleton only - no Sonnet polish pass")
 @click.option("--overwrite", is_flag=True, help="Overwrite existing output directory")
 @click.option("--dry-run", is_flag=True, help="Print FlowGraph + RBAC plan without writing files")
 @click.option("--json-output", is_flag=True, help="Emit machine-readable JSON to stdout")
@@ -99,7 +106,7 @@ def generate(
     console.print(
         Panel(
             f"[bold]FlowGraph[/bold]: {len(graph.nodes)} nodes · {len(graph.edges)} edges\n"
-            + "\n".join(f"  • {n.type.value}: [cyan]{n.name}[/cyan]" for n in graph.nodes),
+            + "\n".join(f"  - {n.type.value}: [cyan]{n.name}[/cyan]" for n in graph.nodes),
             title="Parsed",
             border_style="green",
         )
@@ -124,14 +131,14 @@ def generate(
         console.print(f"[red]{exc}[/red]")
         sys.exit(1)
 
-    console.print(f"\n[green]✓[/green] Wrote {len(paths)} files to [cyan]{output}/[/cyan]:")
+    console.print(f"\n[green]OK[/green] Wrote {len(paths)} files to [cyan]{output}/[/cyan]:")
     for p in paths:
         console.print(f"  {p.name}")
 
     if result.warnings:
         console.print("\n[yellow]Warnings:[/yellow]")
         for w in result.warnings:
-            console.print(f"  ⚠ {w}")
+            console.print(f"  [yellow]WARN[/yellow] {w}")
 
     if not no_validate:
         with console.status("[bold cyan]Running Checkov…"):
@@ -185,7 +192,7 @@ def explain(description: str, region: str, env: str) -> None:
 
     console.print("\n[bold]Edges:[/bold]")
     for e in graph.edges:
-        console.print(f"  {e.source} →[{e.operation}]→ {e.target}")
+        console.print(f"  {e.source} -[{e.operation}]-> {e.target}")
 
     _print_rbac_plan(rbac)
 
@@ -204,17 +211,17 @@ def _print_rbac_plan(rbac) -> None:  # type: ignore[no-untyped-def]
 
     if rbac.warnings:
         for w in rbac.warnings:
-            console.print(f"  [yellow]⚠[/yellow] {w}")
+            console.print(f"  [yellow]WARN[/yellow] {w}")
 
 
 def _print_checkov_report(report) -> None:  # type: ignore[no-untyped-def]
     status = "[green]PASS[/green]" if report.ok else "[red]FAIL[/red]"
     console.print(
-        f"\nCheckov: {status} — {report.passed} passed · {report.failed} failed · {report.skipped} skipped"
+        f"\nCheckov: {status} | {report.passed} passed / {report.failed} failed / {report.skipped} skipped"
     )
     if report.failed_checks:
         for f in report.failed_checks[:10]:
-            console.print(f"  [red]✗[/red] {f.check_id} {f.severity} — {f.resource} ({f.file_path})")
+            console.print(f"  [red]FAIL[/red] {f.check_id} {f.severity} - {f.resource} ({f.file_path})")
         if len(report.failed_checks) > 10:
             console.print(f"  … and {len(report.failed_checks) - 10} more")
 
