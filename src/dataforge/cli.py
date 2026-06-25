@@ -14,7 +14,6 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 if sys.stderr and hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 
-import anthropic
 import click
 from rich.console import Console
 from rich.panel import Panel
@@ -22,11 +21,12 @@ from rich.table import Table
 
 from dataforge import __version__
 from dataforge.config import Settings, get_settings
+from dataforge.generation.data_product_generator import DataProductGenerator
 from dataforge.generation.hcl_generator import HclGenerator
 from dataforge.generation.renderer import Renderer
+from dataforge.llm.adapter import build_adapter
 from dataforge.models.flow_graph import FlowMetadata
 from dataforge.output.writer import OutputWriter
-from dataforge.generation.data_product_generator import DataProductGenerator
 from dataforge.parsing.adf_importer import AdfImporter, AdfImportError
 from dataforge.parsing.intent_parser import IntentParser, ParseError
 from dataforge.parsing.intent_resolver import IntentResolver
@@ -126,7 +126,7 @@ def generate(
             console.print("[yellow]Dry run — no files written.[/yellow]")
             return
 
-        tf_result = HclGenerator(Renderer(), None, None).generate(graph, rbac, llm_polish=False)
+        tf_result = HclGenerator(Renderer(), None).generate(graph, rbac, llm_polish=False)
         platform_result = DataProductGenerator().generate(product, graph, rbac)
         all_files = tf_result.files + platform_result.files
         all_warnings = tf_result.warnings + platform_result.warnings
@@ -157,20 +157,20 @@ def generate(
             _print_checkov_report(report)
 
         if json_output:
-            out = {"files": [f.filename for f in result.files], "warnings": result.warnings}
+            out = {"files": [f.filename for f in all_files], "warnings": all_warnings}
             print(json.dumps(out, indent=2))
 
         return
 
-    # ── NL path (existing behaviour — unchanged) ──────────────────────────────
+    # ── NL path — requires an LLM provider ───────────────────────────────────
+    settings = get_settings()
     try:
-        settings = get_settings()
-    except Exception as exc:
-        console.print(f"[red]Configuration error:[/red] {exc}")
-        console.print("Set ANTHROPIC_API_KEY in your environment or .env file.")
+        # build_adapter() reads DATAFORGE_LLM_PROVIDER and the appropriate API key.
+        # It raises ValueError with a helpful message if the key is missing.
+        adapter = build_adapter(settings)
+    except (ValueError, ImportError) as exc:
+        console.print(f"[red]LLM configuration error:[/red] {exc}")
         sys.exit(1)
-
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key.get_secret_value())
 
     metadata_overrides: dict = {
         "location": region,
@@ -180,9 +180,10 @@ def generate(
         "tags": {"managed-by": "dataforge", "environment": env},
     }
 
-    with console.status("[bold cyan]Parsing description with Claude Haiku…"):
+    provider_label = settings.llm_provider
+    with console.status(f"[bold cyan]Parsing description with {provider_label}…"):
         try:
-            graph = IntentParser(client, settings).parse(description, metadata_overrides)
+            graph = IntentParser(adapter).parse(description, metadata_overrides)
         except ParseError as exc:
             console.print(f"[red]Parse failed:[/red] {exc}")
             sys.exit(1)
@@ -204,10 +205,10 @@ def generate(
         return
 
     if no_llm_polish:
-        result = HclGenerator(Renderer(), None, settings).generate(graph, rbac, llm_polish=False)
+        result = HclGenerator(Renderer(), None).generate(graph, rbac, llm_polish=False)
     else:
-        with console.status("[bold cyan]Generating Terraform with Claude Sonnet…"):
-            result = HclGenerator(Renderer(), client, settings).generate(graph, rbac, llm_polish=True)
+        with console.status(f"[bold cyan]Generating Terraform with {provider_label}…"):
+            result = HclGenerator(Renderer(), adapter).generate(graph, rbac, llm_polish=True)
 
     try:
         paths = OutputWriter().write(result.files, output, overwrite=overwrite)
@@ -271,18 +272,18 @@ def plan(
     Example:
         dataforge plan "ADF reads ADLS and triggers Databricks" --compare-azure --resource-group rg-myapp
     """
+    settings = get_settings()
     try:
-        settings = get_settings()
-    except Exception as exc:
-        console.print(f"[red]Configuration error:[/red] {exc}")
+        adapter = build_adapter(settings)
+    except (ValueError, ImportError) as exc:
+        console.print(f"[red]LLM configuration error:[/red] {exc}")
         sys.exit(1)
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key.get_secret_value())
     overrides = {"location": region, "environment": env, "resource_group": resource_group}
 
     with console.status("[bold cyan]Parsing description…"):
         try:
-            graph = IntentParser(client, settings).parse(description, overrides)
+            graph = IntentParser(adapter).parse(description, overrides)
         except ParseError as exc:
             console.print(f"[red]{exc}[/red]")
             sys.exit(1)
@@ -314,18 +315,18 @@ def plan(
 @click.option("--env", default="dev", show_default=True)
 def explain(description: str, region: str, env: str) -> None:
     """Parse a description and show the FlowGraph + RBAC plan without writing files."""
+    settings = get_settings()
     try:
-        settings = get_settings()
-    except Exception as exc:
-        console.print(f"[red]Configuration error:[/red] {exc}")
+        adapter = build_adapter(settings)
+    except (ValueError, ImportError) as exc:
+        console.print(f"[red]LLM configuration error:[/red] {exc}")
         sys.exit(1)
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key.get_secret_value())
     overrides = {"location": region, "environment": env}
 
     with console.status("[bold cyan]Parsing…"):
         try:
-            graph = IntentParser(client, settings).parse(description, overrides)
+            graph = IntentParser(adapter).parse(description, overrides)
         except ParseError as exc:
             console.print(f"[red]{exc}[/red]")
             sys.exit(1)
@@ -437,7 +438,7 @@ def import_adf(
         _print_rbac_plan(rbac)
 
         # Template-only generation — no API key required (llm_polish=False, client=None)
-        result = HclGenerator(Renderer(), None, None).generate(graph, rbac, llm_polish=False)
+        result = HclGenerator(Renderer(), None).generate(graph, rbac, llm_polish=False)
 
         try:
             paths = OutputWriter().write(result.files, output, overwrite=overwrite)

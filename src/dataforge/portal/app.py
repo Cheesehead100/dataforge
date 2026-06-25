@@ -5,11 +5,8 @@ from __future__ import annotations
 import io
 import zipfile
 from pathlib import Path
-from typing import Annotated
-
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from dataforge.generation.data_product_generator import DataProductGenerator
@@ -201,7 +198,8 @@ async def generate(req: GenerateRequest) -> StreamingResponse:
 
     rbac = RbacResolver().resolve(graph)
 
-    tf_result = HclGenerator(Renderer(), None, None).generate(graph, rbac, llm_polish=False)
+    # Portal always uses skeleton-only mode (no LLM polish) so no API key is needed.
+    tf_result = HclGenerator(Renderer(), None).generate(graph, rbac, llm_polish=False)
     platform_result = DataProductGenerator().generate(product, graph, rbac)
 
     # Package everything into a ZIP

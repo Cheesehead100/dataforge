@@ -1,4 +1,9 @@
-"""E2E test for the 'generate' CLI command with mocked LLM clients."""
+"""E2E tests for the 'generate' CLI command with mocked LLM adapter.
+
+These tests invoke the real Click CLI via CliRunner so they exercise the full
+CLI → adapter → generator → writer → output path. The only thing mocked is
+the LLM call (build_adapter) so no API key is needed to run them.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +17,7 @@ from pydantic import SecretStr
 
 from dataforge.cli import cli
 from dataforge.config import Settings
+from dataforge.llm.adapter import LlmAdapter
 
 
 def _test_settings() -> Settings:
@@ -41,27 +47,13 @@ CANNED_GRAPH = {
 }
 
 
-def _build_mock_anthropic():
-    """Return a mock Anthropic client that returns the canned graph from Haiku
-    and a trivial string from Sonnet."""
-    tool_block = MagicMock()
-    tool_block.type = "tool_use"
-    tool_block.input = CANNED_GRAPH
-
-    haiku_response = MagicMock()
-    haiku_response.content = [tool_block]
-
-    sonnet_text_block = MagicMock()
-    sonnet_text_block.text = "# polished HCL"
-
-    sonnet_response = MagicMock()
-    sonnet_response.content = [sonnet_text_block]
-
-    client = MagicMock()
-    client.messages.create.side_effect = lambda **kwargs: (
-        haiku_response if "haiku" in kwargs.get("model", "") else sonnet_response
-    )
-    return client
+def _build_mock_adapter() -> LlmAdapter:
+    """Return a mock LlmAdapter that returns CANNED_GRAPH from extract_json()
+    and a trivial HCL string from complete() (the polish pass)."""
+    adapter = MagicMock(spec=LlmAdapter)
+    adapter.extract_json.return_value = CANNED_GRAPH
+    adapter.complete.return_value = "# polished HCL"
+    return adapter
 
 
 @pytest.fixture
@@ -69,25 +61,20 @@ def runner():
     return CliRunner()
 
 
-@pytest.fixture
-def mock_anthropic_env(tmp_path):
-    """Patch get_settings to avoid requiring a real API key."""
-    return tmp_path
-
-
-def _patches():
-    """Context managers that mock both the Anthropic client and get_settings."""
+def _common_patches():
+    """Patch get_settings and build_adapter — used by all NL-path tests."""
     return [
         patch("dataforge.cli.get_settings", return_value=_test_settings()),
-        patch("dataforge.cli.anthropic.Anthropic", return_value=_build_mock_anthropic()),
+        patch("dataforge.cli.build_adapter", return_value=_build_mock_adapter()),
     ]
 
 
 class TestGenerateCommand:
+
     def test_generates_files_with_mocked_llm(self, runner, tmp_path):
         out = tmp_path / "output"
         with patch("dataforge.cli.get_settings", return_value=_test_settings()), \
-             patch("dataforge.cli.anthropic.Anthropic", return_value=_build_mock_anthropic()):
+             patch("dataforge.cli.build_adapter", return_value=_build_mock_adapter()):
             result = runner.invoke(
                 cli,
                 ["generate", "ADLS to Databricks to Fabric",
@@ -96,13 +83,12 @@ class TestGenerateCommand:
             )
         assert result.exit_code == 0, result.output
         assert out.exists()
-        written = list(out.glob("*.tf"))
-        assert len(written) >= 1
+        assert len(list(out.glob("*.tf"))) >= 1
 
     def test_rbac_file_always_written(self, runner, tmp_path):
         out = tmp_path / "output"
         with patch("dataforge.cli.get_settings", return_value=_test_settings()), \
-             patch("dataforge.cli.anthropic.Anthropic", return_value=_build_mock_anthropic()):
+             patch("dataforge.cli.build_adapter", return_value=_build_mock_adapter()):
             runner.invoke(
                 cli,
                 ["generate", "ADF reads ADLS, triggers Databricks",
@@ -111,25 +97,24 @@ class TestGenerateCommand:
             )
         assert (out / "rbac.tf").exists()
 
-    def test_no_llm_polish_flag_skips_sonnet(self, runner, tmp_path):
+    def test_no_llm_polish_flag_skips_complete(self, runner, tmp_path):
         out = tmp_path / "output"
-        mock_client = _build_mock_anthropic()
+        mock_adapter = _build_mock_adapter()
         with patch("dataforge.cli.get_settings", return_value=_test_settings()), \
-             patch("dataforge.cli.anthropic.Anthropic", return_value=mock_client):
+             patch("dataforge.cli.build_adapter", return_value=mock_adapter):
             runner.invoke(
                 cli,
                 ["generate", "ADF reads ADLS",
                  "--output", str(out), "--no-validate", "--no-llm-polish"],
                 catch_exceptions=False,
             )
-        calls = mock_client.messages.create.call_args_list
-        sonnet_calls = [c for c in calls if "sonnet" in c.kwargs.get("model", "")]
-        assert len(sonnet_calls) == 0
+        # --no-llm-polish means the adapter's complete() (polish pass) is never called.
+        mock_adapter.complete.assert_not_called()
 
     def test_dry_run_writes_no_files(self, runner, tmp_path):
         out = tmp_path / "output"
         with patch("dataforge.cli.get_settings", return_value=_test_settings()), \
-             patch("dataforge.cli.anthropic.Anthropic", return_value=_build_mock_anthropic()):
+             patch("dataforge.cli.build_adapter", return_value=_build_mock_adapter()):
             result = runner.invoke(
                 cli,
                 ["generate", "ADF reads ADLS",
@@ -144,7 +129,7 @@ class TestGenerateCommand:
         out.mkdir()
         (out / "existing.tf").write_text("old content")
         with patch("dataforge.cli.get_settings", return_value=_test_settings()), \
-             patch("dataforge.cli.anthropic.Anthropic", return_value=_build_mock_anthropic()):
+             patch("dataforge.cli.build_adapter", return_value=_build_mock_adapter()):
             result = runner.invoke(
                 cli,
                 ["generate", "ADF reads ADLS",
@@ -158,7 +143,7 @@ class TestGenerateCommand:
         out.mkdir()
         (out / "existing.tf").write_text("old")
         with patch("dataforge.cli.get_settings", return_value=_test_settings()), \
-             patch("dataforge.cli.anthropic.Anthropic", return_value=_build_mock_anthropic()):
+             patch("dataforge.cli.build_adapter", return_value=_build_mock_adapter()):
             result = runner.invoke(
                 cli,
                 ["generate", "ADF reads ADLS",
@@ -259,6 +244,28 @@ pipeline:
             ["generate", "--from", str(yaml_file), "--output", str(out)],
         )
         assert result.exit_code != 0
+
+    def test_json_output_uses_correct_variables(self, runner, tmp_path):
+        # Regression for review finding #4: --json-output was referencing undefined `result`
+        # in the YAML path (should use all_files / all_warnings instead).
+        yaml_file = tmp_path / "data-product.yaml"
+        yaml_file.write_text(self.INTENT_YAML, encoding="utf-8")
+        out = tmp_path / "output"
+        result = runner.invoke(
+            cli,
+            ["generate", "--from", str(yaml_file), "--output", str(out),
+             "--no-validate", "--json-output"],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.output
+        # The JSON block is printed after the normal output; find it.
+        lines = result.output.splitlines()
+        json_start = next((i for i, l in enumerate(lines) if l.strip() == "{"), None)
+        assert json_start is not None, "No JSON block found in output"
+        json_str = "\n".join(lines[json_start:])
+        parsed = json.loads(json_str)
+        assert "files" in parsed
+        assert "warnings" in parsed
 
 
 class TestVersionCommand:

@@ -44,6 +44,9 @@ portal = [
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
 ]
+openai = [
+    "openai>=1.50",   # covers OpenAI, Azure OpenAI, Groq, Ollama, Mistral (all OpenAI-compatible)
+]
 
 [project.scripts]
 dataforge = "dataforge.cli:cli"
