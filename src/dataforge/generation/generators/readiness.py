@@ -1,0 +1,86 @@
+"""L8: ReadinessGenerator — post-deploy platform validation suite."""
+
+from __future__ import annotations
+
+from dataforge.constants import NodeType
+from dataforge.generation.generators.base import BaseGenerator
+from dataforge.generation.renderer import Renderer
+from dataforge.models.data_product import DataProduct
+from dataforge.models.flow_graph import FlowGraph
+from dataforge.models.rbac import RbacResult
+from dataforge.models.terraform import GenerationResult, TerraformFile
+
+_RENDERER = Renderer()
+
+
+class ReadinessGenerator(BaseGenerator):
+    def applicable(self, product: DataProduct) -> bool:
+        return True  # every product needs a readiness gate
+
+    def generate(self, product: DataProduct, graph: FlowGraph, rbac: RbacResult) -> GenerationResult:
+        has_adls = bool(graph.nodes_of_type(NodeType.ADLS))
+        has_databricks = bool(graph.nodes_of_type(NodeType.DATABRICKS))
+        has_kv = bool(graph.nodes_of_type(NodeType.KEY_VAULT))
+        has_adf = bool(graph.nodes_of_type(NodeType.ADF))
+        has_fabric = bool(graph.nodes_of_type(NodeType.FABRIC_LAKEHOUSE))
+
+        gov_raw = product.governance.model_dump() if product.governance else {}
+        uc = gov_raw.get("unity_catalog", {}) or {}
+        catalog = uc.get("catalog", product.name.replace("-", "_"))
+        schemas = [
+            (s.get("name", s) if isinstance(s, dict) else s)
+            for s in uc.get("schemas", [])
+        ]
+        has_unity_catalog = bool(uc)
+
+        ctx = {
+            "product_name": product.name,
+            "app": product.name.replace("_", "-"),
+            "env": graph.metadata.environment,
+            "metadata": graph.metadata,
+            "has_adls": has_adls,
+            "has_databricks": has_databricks,
+            "has_key_vault": has_kv,
+            "has_adf": has_adf,
+            "has_fabric": has_fabric,
+            "has_unity_catalog": has_unity_catalog,
+            "catalog": catalog,
+            "schemas": schemas,
+            "sla_freshness_hours": _parse_freshness(product),
+        }
+
+        files: list[TerraformFile] = [
+            TerraformFile(
+                filename="tests/readiness/conftest.py",
+                content=_RENDERER.render("readiness/conftest.py.j2", ctx),
+            ),
+            TerraformFile(
+                filename="tests/readiness/test_storage.py",
+                content=_RENDERER.render("readiness/test_storage.py.j2", ctx),
+            ),
+            TerraformFile(
+                filename="tests/readiness/test_platform.py",
+                content=_RENDERER.render("readiness/test_platform.py.j2", ctx),
+            ),
+            TerraformFile(
+                filename="tests/readiness/requirements.txt",
+                content=_RENDERER.render("readiness/requirements.txt.j2", ctx),
+            ),
+            TerraformFile(
+                filename="tests/readiness/run_readiness.sh",
+                content=_RENDERER.render("readiness/run_readiness.sh.j2", ctx),
+            ),
+        ]
+
+        return GenerationResult(files=files)
+
+
+def _parse_freshness(product: DataProduct) -> int:
+    """Return freshness SLA as integer hours (default 24)."""
+    if product.metadata and product.metadata.sla:
+        raw = product.metadata.sla.freshness
+        if raw.endswith("h"):
+            return int(raw[:-1])
+    # intent form sla is a string like "hourly" or "daily"
+    sla_str = product.sla or ""
+    return {"hourly": 1, "daily": 24, "weekly": 168}.get(sla_str.lower(), 24)

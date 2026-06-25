@@ -84,6 +84,18 @@ class QualityGenerator(BaseGenerator):
             content=json.dumps(manifest, indent=2),
         ))
 
+        # Databricks job definitions (scheduled runners)
+        jobs_ctx = {
+            "product_name": product.name,
+            "catalog": catalog,
+            "checks": checks,
+            "env": graph.metadata.environment,
+        }
+        files.append(TerraformFile(
+            filename="quality/databricks_jobs.tf",
+            content=_RENDERER.render("quality/databricks_jobs.tf.j2", jobs_ctx),
+        ))
+
         return GenerationResult(files=files)
 
 

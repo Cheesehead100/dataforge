@@ -415,7 +415,7 @@ class TestAnsibleGenerator:
     def test_requirements_has_databricks_collection(self):
         result = AnsibleGenerator().generate(_full_product(), _graph(), _RBAC)
         req = next(f for f in result.files if f.filename == "ansible/requirements.yml")
-        assert "community.databricks" in req.content
+        assert "databricks.databricks" in req.content
 
     def test_requirements_has_azure_collection(self):
         result = AnsibleGenerator().generate(_full_product(), _graph(), _RBAC)
