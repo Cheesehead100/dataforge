@@ -11,7 +11,7 @@ pytest.importorskip("fastapi", reason="fastapi not installed — run pip install
 pytest.importorskip("httpx", reason="httpx not installed — run pip install dataforge[dev]")
 
 from fastapi.testclient import TestClient  # noqa: E402
-from dataforge.portal.app import app, _build_yaml, GenerateRequest, PreviewRequest  # noqa: E402
+from dataforge.portal.app import app, _build_yaml, GenerateRequest, PreviewRequest, QualityCheck  # noqa: E402
 
 client = TestClient(app)
 
@@ -292,3 +292,93 @@ class TestGenerate:
         with zipfile.ZipFile(buf) as zf:
             yaml_content = zf.read("data-product.yaml").decode()
         assert "customer360" in yaml_content
+
+
+# ── Quality Checks ────────────────────────────────────────────────────────────
+
+class TestQualityChecks:
+
+    def _req(self, quality_checks=None, **overrides):
+        data = {**_BASE, "quality_checks": quality_checks or [], **overrides}
+        return PreviewRequest(**data)
+
+    def test_no_quality_block_when_empty(self):
+        y = _build_yaml(self._req(quality_checks=[]))
+        assert "quality:" not in y
+
+    def test_not_null_check_in_yaml(self):
+        checks = [{"type": "not_null", "column": "customer_id"}]
+        data = {**_BASE, "quality_checks": checks}
+        y = _build_yaml(PreviewRequest(**data))
+        assert "not_null" in y
+        assert "customer_id" in y
+
+    def test_unique_check_in_yaml(self):
+        checks = [{"type": "unique", "column": "order_id"}]
+        data = {**_BASE, "quality_checks": checks}
+        y = _build_yaml(PreviewRequest(**data))
+        assert "unique" in y
+        assert "order_id" in y
+
+    def test_freshness_check_in_yaml(self):
+        checks = [{"type": "freshness_within", "hours": 24}]
+        data = {**_BASE, "quality_checks": checks}
+        y = _build_yaml(PreviewRequest(**data))
+        assert "freshness_within" in y
+        assert "hours: 24" in y
+
+    def test_multiple_checks_all_emitted(self):
+        checks = [
+            {"type": "not_null",        "column": "id"},
+            {"type": "unique",          "column": "order_id"},
+            {"type": "freshness_within","hours": 12},
+        ]
+        data = {**_BASE, "quality_checks": checks}
+        y = _build_yaml(PreviewRequest(**data))
+        assert y.count("- type:") >= 3
+
+    def test_not_null_without_column_ignored(self):
+        checks = [{"type": "not_null", "column": ""}]
+        data = {**_BASE, "quality_checks": checks}
+        y = _build_yaml(PreviewRequest(**data))
+        assert "quality:" not in y
+
+    def test_freshness_without_hours_ignored(self):
+        checks = [{"type": "freshness_within", "hours": None}]
+        data = {**_BASE, "quality_checks": checks}
+        y = _build_yaml(PreviewRequest(**data))
+        assert "quality:" not in y
+
+    def test_quality_block_nested_under_monitoring(self):
+        checks = [{"type": "not_null", "column": "id"}]
+        data = {**_BASE, "quality_checks": checks}
+        y = _build_yaml(PreviewRequest(**data))
+        # quality: must appear AFTER monitoring:
+        mon_pos = y.index("monitoring:")
+        qual_pos = y.index("quality:")
+        assert qual_pos > mon_pos
+
+    def test_preview_endpoint_accepts_quality_checks(self):
+        req = {**_BASE, "quality_checks": [{"type": "not_null", "column": "id"}]}
+        r = client.post("/api/preview", json=req)
+        assert r.status_code == 200
+        assert "not_null" in r.json()["yaml"]
+
+    def test_generate_endpoint_accepts_quality_checks(self):
+        req = {**_BASE, "quality_checks": [{"type": "unique", "column": "sku"}]}
+        r = client.post("/api/generate", json=req)
+        assert r.status_code == 200
+        buf = io.BytesIO(r.content)
+        with zipfile.ZipFile(buf) as zf:
+            yaml_content = zf.read("data-product.yaml").decode()
+        assert "unique" in yaml_content
+        assert "sku" in yaml_content
+
+    def test_quality_check_model_validates_type(self):
+        chk = QualityCheck(type="not_null", column="id")
+        assert chk.type == "not_null"
+        assert chk.column == "id"
+
+    def test_freshness_check_model_stores_hours(self):
+        chk = QualityCheck(type="freshness_within", hours=48)
+        assert chk.hours == 48

@@ -82,6 +82,51 @@ governance:
     return YamlParser().parse_string(yaml)
 
 
+def _product_with_webhooks() -> DataProduct:
+    yaml = """
+product: alerting_product
+environment: prod
+source:
+  type: eventhub
+target:
+  type: adls
+sla: hourly
+monitoring:
+  notifications:
+    teams: true
+    slack: true
+  alerts:
+    - name: drift
+      metric: terraform_drift
+      threshold: 1
+      severity: critical
+      channel: "email:sre@example.com"
+  cost:
+    monthly_budget_usd: 2000
+cicd:
+  provider: github_actions
+"""
+    return YamlParser().parse_string(yaml)
+
+
+def _product_teams_only() -> DataProduct:
+    yaml = """
+product: teams_product
+environment: dev
+source:
+  type: blob_storage
+target:
+  type: adls
+sla: daily
+monitoring:
+  notifications:
+    teams: true
+cicd:
+  provider: azure_devops
+"""
+    return YamlParser().parse_string(yaml)
+
+
 def _product_ado() -> DataProduct:
     yaml = """
 product: sales_mart
@@ -199,6 +244,97 @@ class TestDriftDetectionGenerator:
         gen = DriftDetectionGenerator()
         result = gen.generate(_product_ado(), _simple_graph(), _RBAC)
         assert len(result.files) == 2
+
+    # ── Teams / Slack webhook support ────────────────────────────────────────
+
+    def test_teams_enabled_via_monitoring_notifications(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_with_webhooks(), _simple_graph("prod"), _RBAC)
+        wf = next(f for f in result.files if "dataforge-drift.yml" in f.filename)
+        assert "DRIFT_TEAMS_WEBHOOK" in wf.content
+
+    def test_slack_enabled_via_monitoring_notifications(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_with_webhooks(), _simple_graph("prod"), _RBAC)
+        wf = next(f for f in result.files if "dataforge-drift.yml" in f.filename)
+        assert "DRIFT_SLACK_WEBHOOK" in wf.content
+
+    def test_teams_notification_function_in_drift_notify(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_with_webhooks(), _simple_graph("prod"), _RBAC)
+        script = next(f for f in result.files if "drift_notify.py" in f.filename)
+        assert "notify_teams" in script.content
+        assert "AdaptiveCard" in script.content
+
+    def test_slack_notification_function_in_drift_notify(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_with_webhooks(), _simple_graph("prod"), _RBAC)
+        script = next(f for f in result.files if "drift_notify.py" in f.filename)
+        assert "notify_slack" in script.content
+        assert "Block" in script.content  # Block Kit
+
+    def test_drift_notify_reads_teams_env_var(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_with_webhooks(), _simple_graph("prod"), _RBAC)
+        script = next(f for f in result.files if "drift_notify.py" in f.filename)
+        assert "os.environ.get" in script.content
+        assert "DRIFT_TEAMS_WEBHOOK" in script.content
+
+    def test_drift_notify_reads_slack_env_var(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_with_webhooks(), _simple_graph("prod"), _RBAC)
+        script = next(f for f in result.files if "drift_notify.py" in f.filename)
+        assert "DRIFT_SLACK_WEBHOOK" in script.content
+
+    def test_no_webhooks_when_notifications_absent(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_gha(), _simple_graph(), _RBAC)
+        wf = next(f for f in result.files if "dataforge-drift.yml" in f.filename)
+        assert "DRIFT_TEAMS_WEBHOOK" not in wf.content
+        assert "DRIFT_SLACK_WEBHOOK" not in wf.content
+
+    def test_no_notify_functions_when_notifications_absent(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_gha(), _simple_graph(), _RBAC)
+        script = next(f for f in result.files if "drift_notify.py" in f.filename)
+        assert "notify_teams" not in script.content
+        assert "notify_slack" not in script.content
+
+    def test_teams_only_ado_has_webhook_env(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_teams_only(), _simple_graph(), _RBAC)
+        wf = next(f for f in result.files if "azure-pipelines-drift.yml" in f.filename)
+        assert "DRIFT_TEAMS_WEBHOOK" in wf.content
+        assert "DRIFT_SLACK_WEBHOOK" not in wf.content
+
+    def test_teams_only_ado_script_has_notify_teams(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_teams_only(), _simple_graph(), _RBAC)
+        script = next(f for f in result.files if "drift_notify.py" in f.filename)
+        assert "notify_teams" in script.content
+        assert "notify_slack" not in script.content
+
+    def test_webhook_secrets_named_correctly(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_with_webhooks(), _simple_graph("prod"), _RBAC)
+        wf = next(f for f in result.files if "dataforge-drift.yml" in f.filename)
+        # Verify the canonical secret names are used (not the old TEAMS_DRIFT_WEBHOOK)
+        assert "secrets.DRIFT_TEAMS_WEBHOOK" in wf.content
+        assert "secrets.DRIFT_SLACK_WEBHOOK" in wf.content
+
+    def test_teams_comment_in_workflow_header(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_with_webhooks(), _simple_graph("prod"), _RBAC)
+        wf = next(f for f in result.files if "dataforge-drift.yml" in f.filename)
+        # Secret name appears in both the header comment and the env block
+        assert wf.content.count("DRIFT_TEAMS_WEBHOOK") >= 2
+
+    def test_email_still_works_alongside_webhooks(self):
+        gen = DriftDetectionGenerator()
+        result = gen.generate(_product_with_webhooks(), _simple_graph("prod"), _RBAC)
+        wf = next(f for f in result.files if "dataforge-drift.yml" in f.filename)
+        # Email from the alert channel should also be present
+        assert "sre@example.com" in wf.content
 
 
 # ── SreDashboardGenerator ───────────────────────────────────────────────────

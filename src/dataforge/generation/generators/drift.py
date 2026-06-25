@@ -16,13 +16,18 @@ _DEFAULT_SCHEDULE_UTC = "0 2 * * *"  # nightly at 02:00 UTC
 
 
 def _parse_notification(cicd_raw: dict, monitoring_raw: dict) -> dict:
-    """Extract notification channels from cicd or monitoring config."""
+    """Extract notification channels from cicd or monitoring config.
+
+    Teams/Slack are enabled via monitoring.notifications:
+        monitoring:
+          notifications:
+            teams: true   # webhook URL supplied via secret DRIFT_TEAMS_WEBHOOK
+            slack: true   # webhook URL supplied via secret DRIFT_SLACK_WEBHOOK
+    """
     channels: list[str] = []
-    teams_webhook = ""
-    slack_webhook = ""
     email = ""
 
-    # Check monitoring alerts for an email contact
+    # Email: check monitoring.alerts channels then monitoring.cost.alert_channel
     for alert in monitoring_raw.get("alerts", []):
         channel = alert.get("channel", "")
         if channel.startswith("email:") and not email:
@@ -32,18 +37,27 @@ def _parse_notification(cicd_raw: dict, monitoring_raw: dict) -> dict:
     if cost.get("alert_channel", "").startswith("email:") and not email:
         email = cost["alert_channel"].split(":", 1)[-1]
 
+    # Teams / Slack: declared under monitoring.notifications
+    notifications = monitoring_raw.get("notifications") or {}
+    has_teams = bool(notifications.get("teams"))
+    has_slack = bool(notifications.get("slack"))
+
     if email:
         channels.append("email")
+    if has_teams:
+        channels.append("teams")
+    if has_slack:
+        channels.append("slack")
     channels.append("github_summary")  # always emit a job summary
 
     return {
         "channels": channels,
         "email": email,
-        "teams_webhook_secret": "TEAMS_DRIFT_WEBHOOK",
-        "slack_webhook_secret": "SLACK_DRIFT_WEBHOOK",
+        "teams_webhook_secret": "DRIFT_TEAMS_WEBHOOK",
+        "slack_webhook_secret": "DRIFT_SLACK_WEBHOOK",
         "has_email": bool(email),
-        "has_teams": False,
-        "has_slack": False,
+        "has_teams": has_teams,
+        "has_slack": has_slack,
     }
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,6 +34,8 @@ from dataforge.parsing.intent_resolver import IntentResolver
 from dataforge.parsing.yaml_parser import YamlParser
 from dataforge.rbac.resolver import RbacResolver
 from dataforge.validation.checkov_runner import CheckovRunner
+from dataforge.validation.tfsec_runner import TfsecRunner
+from dataforge.validation.infracost_runner import InfracostRunner
 
 console = Console(legacy_windows=False)  # use Python I/O path; avoids CP1252 LegacyWindowsTerm
 
@@ -237,11 +240,43 @@ def generate(
 
 @cli.command()
 @click.argument("directory", type=click.Path(exists=True, path_type=Path))
-def validate(directory: Path) -> None:
-    """Run Checkov on an existing Terraform directory."""
-    report = CheckovRunner().run(directory)
-    _print_checkov_report(report)
-    sys.exit(0 if report.ok else 1)
+@click.option("--skip-tfsec",     is_flag=True, help="Skip tfsec security scan")
+@click.option("--skip-infracost", is_flag=True, help="Skip infracost cost estimate")
+def validate(directory: Path, skip_tfsec: bool, skip_infracost: bool) -> None:
+    """Run Checkov, tfsec, and infracost on an existing Terraform directory.
+
+    \b
+    Requires:
+        pip install checkov
+        tfsec     — https://github.com/aquasecurity/tfsec
+        infracost — https://www.infracost.io/docs
+
+    \b
+    Example:
+        dataforge validate ./output
+        dataforge validate ./output --skip-infracost
+    """
+    all_ok = True
+
+    with console.status("[bold cyan]Running Checkov…"):
+        checkov = CheckovRunner().run(directory)
+    _print_checkov_report(checkov)
+    if not checkov.ok:
+        all_ok = False
+
+    if not skip_tfsec:
+        with console.status("[bold cyan]Running tfsec…"):
+            tfsec = TfsecRunner().run(directory)
+        _print_tfsec_report(tfsec)
+        if tfsec.installed and not tfsec.ok:
+            all_ok = False
+
+    if not skip_infracost:
+        with console.status("[bold cyan]Running infracost…"):
+            cost = InfracostRunner().run(directory)
+        _print_infracost_report(cost)
+
+    sys.exit(0 if all_ok else 1)
 
 
 @cli.command()
@@ -386,6 +421,136 @@ def portal(host: str, port: int, reload: bool) -> None:
     )
 
 
+@cli.command()
+def doctor() -> None:
+    """Check that all DataForge dependencies are correctly installed and configured.
+
+    Runs a series of health checks and reports what is ready vs. missing.
+    Run this first when setting up a new environment.
+
+    \b
+    Checks:
+        terraform   — Terraform CLI
+        ansible     — Ansible (for Alfresco playbooks)
+        checkov     — Checkov IaC scanner
+        tfsec       — tfsec security scanner
+        infracost   — infracost cost estimator
+        API keys    — DATAFORGE_* LLM provider key
+        azure-cli   — az CLI + active login
+    """
+    import shutil
+
+    results: list[tuple[str, bool, str]] = []
+
+    def _check(label: str, ok: bool, detail: str = "") -> None:
+        results.append((label, ok, detail))
+        icon = "[green]OK[/green]" if ok else "[red]MISSING[/red]"
+        suffix = f" [dim]{detail}[/dim]" if detail else ""
+        console.print(f"  {icon}  {label}{suffix}")
+
+    console.print(Panel("[bold]DataForge Doctor[/bold] — environment health check", border_style="cyan"))
+
+    # ── CLI tools ─────────────────────────────────────────────────────────────
+    console.print("\n[bold]CLI Tools[/bold]")
+
+    tf = shutil.which("terraform")
+    if tf:
+        try:
+            proc = subprocess.run(["terraform", "version", "-json"], capture_output=True, text=True, timeout=10)
+            tf_ver = json.loads(proc.stdout).get("terraform_version", "?") if proc.returncode == 0 else "?"
+            _check("terraform", True, tf_ver)
+        except Exception:
+            _check("terraform", True, "(version unknown)")
+    else:
+        _check("terraform", False, "install: https://developer.hashicorp.com/terraform/install")
+
+    ansible = shutil.which("ansible")
+    if ansible:
+        try:
+            proc = subprocess.run(["ansible", "--version"], capture_output=True, text=True, timeout=10)
+            first_line = proc.stdout.splitlines()[0] if proc.stdout else "ansible"
+            _check("ansible", True, first_line.strip())
+        except Exception:
+            _check("ansible", True, "(version unknown)")
+    else:
+        _check("ansible", False, "install: pip install ansible")
+
+    checkov_ok = bool(shutil.which("checkov"))
+    if not checkov_ok:
+        try:
+            proc = subprocess.run([sys.executable, "-m", "checkov", "--version"], capture_output=True, text=True, timeout=10)
+            checkov_ok = proc.returncode == 0
+        except Exception:
+            pass
+    _check("checkov", checkov_ok,
+           "" if checkov_ok else "install: pip install checkov")
+
+    tfsec_ok = bool(shutil.which("tfsec"))
+    _check("tfsec", tfsec_ok,
+           "" if tfsec_ok else "install: https://github.com/aquasecurity/tfsec#installation")
+
+    infracost_ok = bool(shutil.which("infracost"))
+    _check("infracost", infracost_ok,
+           "" if infracost_ok else "install: https://www.infracost.io/docs")
+
+    # ── API keys ──────────────────────────────────────────────────────────────
+    console.print("\n[bold]API Keys[/bold]")
+    import os
+
+    settings = get_settings()
+    provider = settings.llm_provider
+    key_var_map = {
+        "anthropic": "DATAFORGE_ANTHROPIC_API_KEY",
+        "openai":    "DATAFORGE_OPENAI_API_KEY",
+        "groq":      "DATAFORGE_OPENAI_API_KEY",
+        "ollama":    None,
+        "mistral":   "DATAFORGE_OPENAI_API_KEY",
+        "azure_openai": "DATAFORGE_OPENAI_API_KEY",
+    }
+    key_var = key_var_map.get(provider)
+    if key_var is None:
+        _check(f"LLM key ({provider})", True, "Ollama runs locally — no key required")
+    elif os.environ.get(key_var) or getattr(settings, key_var.lower().replace("dataforge_", ""), None):
+        _check(f"LLM key ({provider})", True, f"${key_var} is set")
+    else:
+        _check(f"LLM key ({provider})", False, f"export {key_var}=<your-api-key>")
+
+    # ── Azure CLI ─────────────────────────────────────────────────────────────
+    console.print("\n[bold]Azure[/bold]")
+    az_ok = bool(shutil.which("az"))
+    if az_ok:
+        try:
+            proc = subprocess.run(
+                ["az", "account", "show", "--output", "json"],
+                capture_output=True, text=True, timeout=15
+            )
+            if proc.returncode == 0:
+                acct = json.loads(proc.stdout)
+                _check("azure-cli", True,
+                       f"logged in as {acct.get('user', {}).get('name', '?')} "
+                       f"({acct.get('name', '?')})")
+            else:
+                _check("azure-cli", False, "run: az login")
+        except Exception:
+            _check("azure-cli", True, "(version unknown)")
+    else:
+        _check("azure-cli", False, "install: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli")
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    passed = sum(1 for _, ok, _ in results if ok)
+    total  = len(results)
+    failed = total - passed
+
+    console.print(
+        f"\n[bold]Summary:[/bold] {passed}/{total} checks passed"
+        + (f" · [red]{failed} missing[/red]" if failed else " · [green]all clear[/green]")
+    )
+    if failed:
+        console.print("[dim]Fix the items above, then re-run: dataforge doctor[/dim]")
+
+    sys.exit(0 if failed == 0 else 1)
+
+
 @cli.command("import-adf")
 @click.argument("json_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--output-json", is_flag=True, help="Print FlowGraph as JSON (pipe to dataforge generate)")
@@ -472,6 +637,46 @@ def _print_rbac_plan(rbac) -> None:  # type: ignore[no-untyped-def]
             console.print(f"  [yellow]WARN[/yellow] {w}")
 
 
+def _print_tfsec_report(report) -> None:  # type: ignore[no-untyped-def]
+    if not report.installed:
+        console.print("\ntfsec: [yellow]SKIPPED[/yellow] (not installed — run: install tfsec)")
+        return
+    status = "[green]PASS[/green]" if report.ok else "[red]FAIL[/red]"
+    console.print(
+        f"\ntfsec: {status} | "
+        f"[red]{report.critical} critical[/red] / "
+        f"[yellow]{report.high} high[/yellow] / "
+        f"{report.medium} medium / {report.low} low"
+    )
+    shown = report.findings[:10]
+    for f in shown:
+        sev_col = "red" if f.severity in ("CRITICAL", "HIGH") else "yellow"
+        console.print(
+            f"  [{sev_col}]{f.severity}[/{sev_col}] {f.rule_id} — {f.description[:80]}"
+            + (f" ({f.filename}:{f.start_line})" if f.filename else "")
+        )
+    if len(report.findings) > 10:
+        console.print(f"  … and {len(report.findings) - 10} more")
+
+
+def _print_infracost_report(report) -> None:  # type: ignore[no-untyped-def]
+    if not report.installed:
+        console.print("\ninfracost: [yellow]SKIPPED[/yellow] (not installed — run: install infracost)")
+        return
+    if report.error:
+        console.print(f"\ninfracost: [yellow]WARN[/yellow] Could not estimate cost: {report.error}")
+        return
+    console.print(
+        f"\ninfracost: [cyan]${report.total_monthly_cost:.2f}/mo[/cyan] "
+        f"([dim]{report.currency}[/dim])"
+    )
+    for r in report.resources[:8]:
+        if r.monthly_cost > 0:
+            console.print(f"  {r.name}: [cyan]${r.monthly_cost:.2f}/mo[/cyan]")
+    if len(report.resources) > 8:
+        console.print(f"  … and {len(report.resources) - 8} more resources")
+
+
 def _print_checkov_report(report) -> None:  # type: ignore[no-untyped-def]
     status = "[green]PASS[/green]" if report.ok else "[red]FAIL[/red]"
     console.print(
@@ -485,8 +690,6 @@ def _print_checkov_report(report) -> None:  # type: ignore[no-untyped-def]
 
 
 def _compare_with_azure(rbac, resource_group: str, subscription_id: str | None) -> None:  # type: ignore[no-untyped-def]
-    import subprocess
-
     console.print("\n[bold cyan]Fetching existing Azure role assignments…[/bold cyan]")
     cmd = ["az", "role", "assignment", "list", "--resource-group", resource_group, "--output", "json"]
     if subscription_id:

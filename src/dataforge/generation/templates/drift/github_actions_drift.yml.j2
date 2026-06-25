@@ -3,20 +3,14 @@
 #
 # Runs nightly terraform plan against the last applied state.
 # Exit code 0 = drift-free (no changes).
-# Exit code 2 = drift detected — sends alert and fails the job.
+# Exit code 2 = drift detected — alerts fire and the job fails.
 #
-# Secrets required (set in repo Settings → Secrets):
+# Secrets required (repo Settings → Secrets → Actions):
 #   ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID
-{% if notification.has_email %}
-#   DRIFT_ALERT_EMAIL — recipient for drift notifications
+{% if notification.has_email %}#   DRIFT_SMTP_USER, DRIFT_SMTP_PASSWORD — SMTP credentials for email alerts
+{% endif %}{% if notification.has_teams %}#   {{ notification.teams_webhook_secret }} — Microsoft Teams incoming webhook URL
+{% endif %}{% if notification.has_slack %}#   {{ notification.slack_webhook_secret }} — Slack incoming webhook URL
 {% endif %}
-{% if notification.has_teams %}
-#   {{ notification.teams_webhook_secret }} — Teams incoming webhook URL
-{% endif %}
-{% if notification.has_slack %}
-#   {{ notification.slack_webhook_secret }} — Slack incoming webhook URL
-{% endif %}
-
 name: "Drift Detection — {{ product_name }}"
 
 on:
@@ -97,9 +91,18 @@ jobs:
             echo "Terraform plan failed with exit code ${EXIT_CODE}." >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Parse and format drift report
+      - name: Parse drift report and send notifications
         if: {% raw %}${{ steps.drift.outputs.status != 'clean' }}{% endraw %}
 
+        env:
+{% if notification.has_teams %}
+          DRIFT_TEAMS_WEBHOOK: {% raw %}${{ secrets.DRIFT_TEAMS_WEBHOOK }}{% endraw %}
+
+{% endif %}
+{% if notification.has_slack %}
+          DRIFT_SLACK_WEBHOOK: {% raw %}${{ secrets.DRIFT_SLACK_WEBHOOK }}{% endraw %}
+
+{% endif %}
         run: |
           pip install -q rich
           python scripts/drift_notify.py \
@@ -129,16 +132,6 @@ jobs:
             Review the workflow run for details and remediation steps.
             Run URL: {% raw %}${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}{% endraw %}
 
-{% endif %}
-{% if notification.has_teams %}
-      - name: Notify Teams
-        if: {% raw %}${{ steps.drift.outputs.status != 'clean' }}{% endraw %}
-
-        run: |
-          REPORT=$(cat /tmp/drift_report.json)
-          curl -H "Content-Type: application/json" \
-               -d "{\"text\": \"⚠️ Drift detected in **{{ product_name }}** ({{ env }}). See: ${{ '{{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' }}\"}" \
-               "{% raw %}${{ secrets.{% endraw %}{{ notification.teams_webhook_secret }}{% raw %} }}{% endraw %}"
 {% endif %}
 
       - name: Fail if drift detected

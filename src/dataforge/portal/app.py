@@ -28,6 +28,14 @@ _STATIC_DIR = Path(__file__).parent / "static"
 
 # ── Request / response models ─────────────────────────────────────────────────
 
+class QualityCheck(BaseModel):
+    """A single data quality rule (not_null / unique / freshness_within)."""
+
+    type: str = Field(..., description="not_null | unique | freshness_within")
+    column: str | None = Field(None, description="Column name (not_null, unique)")
+    hours: int | None = Field(None, ge=1, description="Max acceptable staleness in hours (freshness_within)")
+
+
 class GenerateRequest(BaseModel):
     product: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_\-]+$")
     source_type: str = Field(..., description="Source system type (sqlserver, blob_storage, eventhub, adls)")
@@ -46,6 +54,10 @@ class GenerateRequest(BaseModel):
     max_workers: int = Field(8, ge=2, le=64)
     node_type: str = Field("Standard_DS3_v2")
     spot_enabled: bool = Field(False)
+    quality_checks: list[QualityCheck] = Field(
+        default_factory=list,
+        description="Data quality rules (not_null, unique, freshness_within)",
+    )
 
 
 class PreviewRequest(BaseModel):
@@ -61,6 +73,7 @@ class PreviewRequest(BaseModel):
     max_workers: int = 8
     node_type: str = "Standard_DS3_v2"
     spot_enabled: bool = False
+    quality_checks: list[QualityCheck] = Field(default_factory=list)
 
 
 class PreviewResponse(BaseModel):
@@ -94,6 +107,21 @@ def _build_yaml(req: GenerateRequest | PreviewRequest) -> str:
       severity: warning
       channel: "email:{req.alert_email}"
 """
+
+    # Quality checks block (nested under monitoring so MonitoringSpec.extra="allow" picks it up)
+    quality_block = ""
+    raw_checks = getattr(req, "quality_checks", []) or []
+    check_lines: list[str] = []
+    for chk in raw_checks:
+        chk_type = chk.type if hasattr(chk, "type") else chk.get("type", "")
+        chk_col  = (chk.column if hasattr(chk, "column") else chk.get("column")) or ""
+        chk_hrs  = (chk.hours  if hasattr(chk, "hours")  else chk.get("hours"))
+        if chk_type in ("not_null", "unique") and chk_col:
+            check_lines.append(f"      - type: {chk_type}\n        column: {chk_col}")
+        elif chk_type == "freshness_within" and chk_hrs:
+            check_lines.append(f"      - type: freshness_within\n        hours: {int(chk_hrs)}")
+    if check_lines:
+        quality_block = "\n  quality:\n    checks:\n" + "\n".join(check_lines) + "\n"
 
     networking_block = ""
     if private_endpoints:
@@ -133,7 +161,7 @@ governance:
     schemas:
 {schemas_yaml}
 
-monitoring:{alert_block}
+monitoring:{alert_block}{quality_block}
   cost:
     monthly_budget_usd: {req.monthly_budget_usd}
     alert_at_pct: [75, 90, 100]
