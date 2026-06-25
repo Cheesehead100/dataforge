@@ -346,6 +346,45 @@ def explain(description: str, region: str, env: str) -> None:
     _print_rbac_plan(rbac)
 
 
+@cli.command()
+@click.option("--host", default="127.0.0.1", show_default=True, help="Bind host")
+@click.option("--port", default=8000, show_default=True, help="Bind port")
+@click.option("--reload", is_flag=True, help="Auto-reload on code changes (dev mode)")
+def portal(host: str, port: int, reload: bool) -> None:
+    """Launch the DataForge self-service web portal.
+
+    Opens a local web interface where data engineers can fill a form and
+    download a complete production-ready Terraform stack as a ZIP file.
+
+    \b
+    Example:
+        dataforge portal
+        dataforge portal --port 8080
+    """
+    try:
+        import uvicorn
+    except ImportError:
+        console.print(
+            "[red]Portal dependencies not installed.[/red] Run:\n"
+            "  pip install 'dataforge[portal]'"
+        )
+        sys.exit(1)
+
+    console.print(
+        Panel(
+            f"[bold cyan]DataForge Portal[/bold cyan]\n"
+            f"Open [link=http://{host}:{port}]http://{host}:{port}[/link] in your browser",
+            border_style="cyan",
+        )
+    )
+    uvicorn.run(
+        "dataforge.portal.app:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
 @cli.command("import-adf")
 @click.argument("json_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--output-json", is_flag=True, help="Print FlowGraph as JSON (pipe to dataforge generate)")

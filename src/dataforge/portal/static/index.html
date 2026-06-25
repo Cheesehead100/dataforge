@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DataForge — Self-Service Data Platform</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3250;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --error: #ef4444;
+    --text: #e2e8f0;
+    --text-dim: #8892a4;
+    --mono: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; min-height: 100vh; }
+
+  header { border-bottom: 1px solid var(--border); padding: 16px 32px; display: flex; align-items: center; gap: 12px; }
+  .logo { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent); }
+  .tagline { color: var(--text-dim); font-size: 13px; }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 24px; }
+  .panel-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-dim); margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+  .panel-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { display: block; font-size: 12px; font-weight: 500; color: var(--text-dim); margin-bottom: 5px; }
+  input[type="text"], input[type="email"], input[type="number"], select {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 8px 10px; font-size: 13px; outline: none; transition: border-color 0.15s;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  select { cursor: pointer; }
+
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
+  .toggle-label { font-size: 13px; color: var(--text); }
+  .toggle-label small { display: block; font-size: 11px; color: var(--text-dim); }
+  .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; inset: 0; background: var(--border); border-radius: 22px; transition: 0.2s; }
+  .slider:before { position: absolute; content: ''; height: 16px; width: 16px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+  input:checked + .slider { background: var(--accent); }
+  input:checked + .slider:before { transform: translateX(18px); }
+
+  .tags-input { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; min-height: 36px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; cursor: text; }
+  .tags-input:focus-within { border-color: var(--accent); }
+  .tag { background: var(--accent); color: white; border-radius: 4px; padding: 2px 8px; font-size: 12px; display: flex; align-items: center; gap: 4px; }
+  .tag button { background: none; border: none; color: rgba(255,255,255,0.7); cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
+  .tag button:hover { color: white; }
+  .tags-input input { background: none; border: none; outline: none; color: var(--text); font-size: 13px; flex: 1; min-width: 80px; padding: 2px; }
+
+  .action-bar { margin-top: 20px; display: flex; gap: 10px; }
+  .btn { border: none; border-radius: 7px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-preview { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-preview:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-generate { background: var(--accent); color: white; flex: 1; justify-content: center; }
+  .btn-generate:hover:not(:disabled) { background: var(--accent-hover); }
+  .btn-generate:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-download { background: var(--success); color: white; flex: 1; justify-content: center; display: none; }
+  .btn-download:hover { filter: brightness(1.1); }
+
+  .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .right-col { display: flex; flex-direction: column; gap: 24px; }
+
+  .nodes-list { display: flex; flex-direction: column; gap: 6px; }
+  .node-pill { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px; font-size: 12px; display: flex; align-items: center; gap: 8px; }
+  .node-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .node-type { color: var(--text-dim); font-size: 11px; }
+  .node-name { font-weight: 500; flex: 1; }
+
+  .node-type-ADLS { --dot: #3b82f6; }
+  .node-type-DATABRICKS { --dot: #f97316; }
+  .node-type-ADF { --dot: #8b5cf6; }
+  .node-type-KEY_VAULT { --dot: #14b8a6; }
+  .node-type-SQL_MI { --dot: #ec4899; }
+  .node-type-EVENTHUB { --dot: #f59e0b; }
+  .node-type-FABRIC_LAKEHOUSE { --dot: #22c55e; }
+  .node-dot { background: var(--dot, #6366f1); }
+
+  pre { font-family: var(--mono); font-size: 12px; color: #a5b4fc; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 14px; overflow: auto; max-height: 400px; white-space: pre; line-height: 1.6; }
+
+  .status-bar { border-radius: 6px; padding: 10px 14px; font-size: 12px; display: none; align-items: center; gap: 8px; }
+  .status-bar.info { display: flex; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); color: var(--accent-hover); }
+  .status-bar.success { display: flex; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: var(--success); }
+  .status-bar.error { display: flex; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--error); }
+
+  .stat-row { display: flex; gap: 12px; }
+  .stat { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
+  .stat-val { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .stat-lbl { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+  .empty-state { text-align: center; padding: 32px; color: var(--text-dim); }
+  .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
+  .empty-state p { font-size: 12px; }
+
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Data<span>Forge</span></div>
+  <div class="tagline">Fill a form. Get production-ready Azure data infrastructure.</div>
+</header>
+
+<main>
+  <!-- ── Left col: form ──────────────────────────────────────────────────── -->
+  <div>
+    <div class="panel">
+      <div class="panel-title">Data Product</div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Product Name</label>
+          <input type="text" id="product" placeholder="customer360" value="customer360">
+        </div>
+        <div class="form-group">
+          <label>Environment</label>
+          <select id="environment">
+            <option value="dev">dev</option>
+            <option value="test">test</option>
+            <option value="prod">prod</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Source Type</label>
+          <select id="source_type">
+            <option value="sqlserver">SQL Server / Azure SQL</option>
+            <option value="blob_storage">Azure Blob Storage</option>
+            <option value="eventhub">Event Hub (streaming)</option>
+            <option value="adls">ADLS Gen2 (existing)</option>
+            <option value="sql_mi">SQL Managed Instance</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Target Type</label>
+          <select id="target_type">
+            <option value="adls">ADLS Gen2 (medallion)</option>
+            <option value="fabric">Microsoft Fabric</option>
+            <option value="databricks">Databricks Delta Lake</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>SLA / Freshness</label>
+          <select id="sla">
+            <option value="hourly">Hourly (≤ 1h)</option>
+            <option value="daily" selected>Daily (≤ 24h)</option>
+            <option value="weekly">Weekly (≤ 7d)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Monthly Budget (USD)</label>
+          <input type="number" id="monthly_budget_usd" value="1000" min="100" max="100000" step="100">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Alert Email (SRE)</label>
+        <input type="email" id="alert_email" placeholder="sre@company.com">
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="panel-title">Compute &amp; CI/CD</div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>CI/CD Provider</label>
+          <select id="cicd_provider">
+            <option value="github_actions">GitHub Actions</option>
+            <option value="azure_devops">Azure DevOps</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Databricks Node Type</label>
+          <select id="node_type">
+            <option value="Standard_DS3_v2">Standard_DS3_v2 (4 vCPU)</option>
+            <option value="Standard_DS4_v2">Standard_DS4_v2 (8 vCPU)</option>
+            <option value="Standard_DS5_v2">Standard_DS5_v2 (16 vCPU)</option>
+            <option value="Standard_D8s_v3">Standard_D8s_v3 (8 vCPU)</option>
+            <option value="Standard_D16s_v3">Standard_D16s_v3 (16 vCPU)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Max Workers</label>
+          <input type="number" id="max_workers" value="8" min="2" max="64">
+        </div>
+        <div class="form-group">
+          <label>Unity Catalog (optional)</label>
+          <input type="text" id="catalog" placeholder="auto (product_env)">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Medallion Schemas (press Enter to add)</label>
+        <div class="tags-input" id="schemas-container" onclick="document.getElementById('schema-input').focus()">
+          <div class="tag" data-value="bronze">bronze <button onclick="removeTag(this)">×</button></div>
+          <div class="tag" data-value="silver">silver <button onclick="removeTag(this)">×</button></div>
+          <div class="tag" data-value="gold">gold <button onclick="removeTag(this)">×</button></div>
+          <input type="text" id="schema-input" placeholder="add schema…" onkeydown="handleSchemaKey(event)">
+        </div>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          Private Endpoints
+          <small>Generates DNS zones, PE resources, and staged deploy script</small>
+        </div>
+        <label class="switch"><input type="checkbox" id="private_endpoints"><span class="slider"></span></label>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          Spot Instances
+          <small>Cost optimisation — may cause interruptions</small>
+        </div>
+        <label class="switch"><input type="checkbox" id="spot_enabled"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="action-bar">
+      <button class="btn btn-preview" onclick="previewYaml()">⬦ Preview</button>
+      <button class="btn btn-generate" id="btn-generate" onclick="generateZip()">
+        <span id="btn-generate-label">⬡ Generate Stack</span>
+      </button>
+    </div>
+    <button class="btn btn-download" id="btn-download" onclick="downloadZip()">
+      ↓ Download ZIP
+    </button>
+
+    <div class="status-bar" id="status-bar"></div>
+  </div>
+
+  <!-- ── Right col: preview ────────────────────────────────────────────── -->
+  <div class="right-col">
+    <div class="panel">
+      <div class="panel-title">Detected Infrastructure Nodes</div>
+      <div id="nodes-panel">
+        <div class="empty-state">
+          <div class="icon">⬡</div>
+          <p>Click Preview to see what will be generated</p>
+        </div>
+      </div>
+      <div class="stat-row" id="stats-row" style="display:none; margin-top:16px;">
+        <div class="stat"><div class="stat-val" id="stat-nodes">0</div><div class="stat-lbl">Nodes</div></div>
+        <div class="stat"><div class="stat-val" id="stat-edges">0</div><div class="stat-lbl">Edges</div></div>
+        <div class="stat"><div class="stat-val" id="stat-files">?</div><div class="stat-lbl">Files (est.)</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Generated YAML</div>
+      <div id="yaml-panel">
+        <div class="empty-state">
+          <div class="icon">⬦</div>
+          <p>Click Preview or Generate to see the data-product.yaml</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  let _downloadUrl = null;
+  let _zipFilename = null;
+
+  function getSchemas() {
+    return Array.from(document.querySelectorAll('#schemas-container .tag'))
+      .map(t => t.dataset.value).filter(Boolean);
+  }
+
+  function handleSchemaKey(e) {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = e.target.value.trim().replace(/,/g, '');
+      if (val) addSchema(val);
+      e.target.value = '';
+    } else if (e.key === 'Backspace' && !e.target.value) {
+      const tags = document.querySelectorAll('#schemas-container .tag');
+      if (tags.length) tags[tags.length - 1].remove();
+    }
+  }
+
+  function addSchema(val) {
+    const existing = getSchemas();
+    if (existing.includes(val)) return;
+    const input = document.getElementById('schema-input');
+    const tag = document.createElement('div');
+    tag.className = 'tag';
+    tag.dataset.value = val;
+    tag.innerHTML = `${val} <button onclick="removeTag(this)">×</button>`;
+    document.getElementById('schemas-container').insertBefore(tag, input);
+  }
+
+  function removeTag(btn) {
+    btn.closest('.tag').remove();
+  }
+
+  function getFormData() {
+    return {
+      product: document.getElementById('product').value.trim(),
+      source_type: document.getElementById('source_type').value,
+      target_type: document.getElementById('target_type').value,
+      sla: document.getElementById('sla').value,
+      environment: document.getElementById('environment').value,
+      monthly_budget_usd: parseInt(document.getElementById('monthly_budget_usd').value, 10),
+      alert_email: document.getElementById('alert_email').value.trim() || null,
+      cicd_provider: document.getElementById('cicd_provider').value,
+      node_type: document.getElementById('node_type').value,
+      max_workers: parseInt(document.getElementById('max_workers').value, 10),
+      catalog: document.getElementById('catalog').value.trim() || null,
+      schemas: getSchemas(),
+      private_endpoints: document.getElementById('private_endpoints').checked,
+      spot_enabled: document.getElementById('spot_enabled').checked,
+    };
+  }
+
+  function setStatus(type, msg) {
+    const el = document.getElementById('status-bar');
+    el.className = `status-bar ${type}`;
+    el.textContent = msg;
+    el.style.display = 'flex';
+    el.style.marginTop = '12px';
+  }
+
+  function clearStatus() {
+    document.getElementById('status-bar').style.display = 'none';
+  }
+
+  function renderNodes(nodes) {
+    if (!nodes.length) {
+      document.getElementById('nodes-panel').innerHTML = '<div class="empty-state"><div class="icon">⚠</div><p>No nodes detected</p></div>';
+      return;
+    }
+    const html = nodes.map(n => {
+      const cls = `node-type-${n.type.replace(/_/g, '_')}`;
+      return `<div class="node-pill ${cls}"><div class="node-dot"></div><span class="node-name">${n.name}</span><span class="node-type">${n.type}</span></div>`;
+    }).join('');
+    document.getElementById('nodes-panel').innerHTML = `<div class="nodes-list">${html}</div>`;
+  }
+
+  function renderYaml(yaml) {
+    document.getElementById('yaml-panel').innerHTML = `<pre>${escapeHtml(yaml)}</pre>`;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  async function previewYaml() {
+    clearStatus();
+    const data = getFormData();
+    if (!data.product) { setStatus('error', 'Product name is required'); return; }
+
+    setStatus('info', 'Parsing…');
+    try {
+      const res = await fetch('/api/preview', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) { setStatus('error', json.detail || 'Preview failed'); return; }
+
+      renderNodes(json.nodes);
+      renderYaml(json.yaml);
+
+      document.getElementById('stats-row').style.display = 'flex';
+      document.getElementById('stat-nodes').textContent = json.node_count;
+      document.getElementById('stat-edges').textContent = json.edge_count;
+      document.getElementById('stat-files').textContent = estimateFiles(json.node_count, data);
+      clearStatus();
+    } catch (e) {
+      setStatus('error', `Network error: ${e.message}`);
+    }
+  }
+
+  function estimateFiles(nodeCount, data) {
+    let n = 8 + nodeCount;                    // base TF + per-node
+    n += 4;                                   // cicd
+    n += 3;                                   // governance
+    n += 2;                                   // drift
+    n += 3;                                   // SRE
+    n += 2;                                   // cost
+    if (data.private_endpoints) n += 3;       // networking
+    return `~${n}`;
+  }
+
+  async function generateZip() {
+    clearStatus();
+    const data = getFormData();
+    if (!data.product) { setStatus('error', 'Product name is required'); return; }
+
+    const btnLabel = document.getElementById('btn-generate-label');
+    const btn = document.getElementById('btn-generate');
+    const dlBtn = document.getElementById('btn-download');
+
+    btn.disabled = true;
+    btnLabel.innerHTML = '<div class="spinner"></div> Generating…';
+    dlBtn.style.display = 'none';
+    _downloadUrl = null;
+
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({detail: 'Unknown error'}));
+        setStatus('error', json.detail || `HTTP ${res.status}`);
+        return;
+      }
+
+      // Trigger YAML preview alongside ZIP download
+      previewYaml().catch(() => {});
+
+      const blob = await res.blob();
+      _downloadUrl = URL.createObjectURL(blob);
+      _zipFilename = `${data.product}-${data.environment}-dataforge.zip`;
+
+      dlBtn.style.display = 'flex';
+      dlBtn.textContent = `↓ Download ${_zipFilename}`;
+      setStatus('success', `Stack generated — ${_zipFilename} ready for download`);
+    } catch (e) {
+      setStatus('error', `Network error: ${e.message}`);
+    } finally {
+      btn.disabled = false;
+      btnLabel.innerHTML = '⬡ Generate Stack';
+    }
+  }
+
+  function downloadZip() {
+    if (!_downloadUrl) return;
+    const a = document.createElement('a');
+    a.href = _downloadUrl;
+    a.download = _zipFilename;
+    a.click();
+  }
+</script>
+</body>
+</html>
