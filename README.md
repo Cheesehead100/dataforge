@@ -2,7 +2,7 @@
 
 **Turn a data product YAML into a production-ready Azure data platform — automatically.**
 
-DataForge generates the complete platform stack from a single declarative configuration: Terraform, Unity Catalog governance, PySpark data quality checks, CI/CD pipelines, Azure Monitor alerts, Ansible post-provisioning playbooks, ADF pipeline resources, and a readiness validation suite that blocks promotion until the platform is actually working.
+DataForge generates the complete platform stack from a single declarative configuration: Terraform, Unity Catalog governance, PySpark data quality checks, CI/CD pipelines, Azure Monitor alerts, Ansible post-provisioning playbooks, ADF pipeline resources, drift detection, SRE dashboards, cost optimization, private endpoint networking, and a readiness validation suite that blocks promotion until the platform is actually working.
 
 ```yaml
 # data-product.yaml
@@ -22,20 +22,18 @@ dataforge generate --from data-product.yaml
 ```
 
 ```
-✓ Wrote 31 files to ./output/ (9 Terraform · 22 platform)
+✓ Wrote 30 files to ./output/ (12 Terraform · 18 platform)
 
   # Terraform infrastructure
   providers.tf · variables.tf · storage.tf · databricks.tf
   data_factory.tf · adf_pipeline.tf · key_vault.tf · rbac.tf
-  governance.tf · monitoring.tf · outputs.tf
+  sql_mi.tf · monitoring.tf · networking.tf · outputs.tf
 
-  # Data quality (PySpark — run as Databricks jobs)
-  quality/silver_customer_events_checks.py
-  quality/databricks_jobs.tf
-  quality/checks_manifest.json
-
-  # CI/CD
+  # CI/CD (GitHub Actions + Azure DevOps)
   .github/workflows/dataforge-deploy.yml
+  .github/workflows/dataforge-drift.yml
+  .github/workflows/dataforge-cost-optimization.yml
+  azure-pipelines.yml
 
   # Ansible (post-provisioning configuration)
   ansible/inventory.yml
@@ -43,12 +41,19 @@ dataforge generate --from data-product.yaml
   ansible/requirements.yml
 
   # Readiness gate (blocks promotion until platform is verified)
-  tests/readiness/conftest.py
-  tests/readiness/test_storage.py
-  tests/readiness/test_platform.py
-  tests/readiness/requirements.txt
-  tests/readiness/run_readiness.sh
+  tests/readiness/conftest.py · test_storage.py · test_platform.py
+  tests/readiness/requirements.txt · run_readiness.sh
+
+  # SRE operations
+  sre/workbook.tf · sre/workbook.json · sre/runbook.md
+
+  # Cost + drift automation
+  scripts/analyze_costs.py · scripts/drift_notify.py
 ```
+
+Add `networking.private_endpoints: true` and DataForge generates 3 additional files:
+`network/private_endpoints.tf`, `network/dns.tf`, `network/sequencing.sh` — solving the
+Azure private endpoint deployment ordering problem automatically.
 
 ---
 
@@ -67,7 +72,7 @@ Enterprise data teams hit the same eight walls on every deployment:
 | **Nobody owns production operations** | Platform → Data → Cloud blame triangle; no single SRE layer |
 | **Cost explosions** | Clusters left running at 10% utilisation; no policy enforcement at deploy time |
 
-DataForge eliminates all eight by generating the entire platform stack — infrastructure, governance, quality, CI/CD, monitoring, configuration, and validation — from a single YAML file.
+DataForge eliminates all eight by generating the entire platform stack — infrastructure, governance, quality, CI/CD, monitoring, configuration, validation, and operations — from a single YAML file.
 
 ---
 
@@ -85,6 +90,10 @@ A single `dataforge generate --from data-product.yaml` produces:
 | `monitoring.tf` — metric alerts, action groups, cost budgets | MonitoringGenerator | Alert on failure + block spend overruns (Pain Points 7, 8) |
 | `ansible/` — REST API playbooks for Databricks config | AnsibleGenerator | Cluster policy, secret scopes, Unity Catalog bootstrap (Pain Point 1) |
 | `tests/readiness/` — pytest suite + shell runner | ReadinessGenerator | Blocks promotion until storage, catalog, secrets, and DNS are verified (Pain Point 1) |
+| `.github/workflows/dataforge-drift.yml` + `scripts/drift_notify.py` | DriftDetectionGenerator | Nightly scheduled `terraform plan`; alerts on state drift (Pain Point 3) |
+| `sre/workbook.tf` + `sre/workbook.json` + `sre/runbook.md` | SreDashboardGenerator | Azure Monitor Workbook + per-product runbook (Pain Point 7) |
+| `scripts/analyze_costs.py` + `dataforge-cost-optimization.yml` | CostOptimizationGenerator | Weekly rightsizing engine — flags idle clusters, opens GH issues (Pain Point 8) |
+| `network/private_endpoints.tf` + `network/dns.tf` + `network/sequencing.sh` | NetworkingGenerator | Explicit PE dependency chains + 6-stage deploy script (Pain Point 2) |
 
 ---
 
@@ -95,20 +104,24 @@ Data Product YAML
       │
       ▼
 DataForge Engine
-  ├── YamlParser          — validates schema, two forms: intent or explicit
-  ├── IntentResolver      — deterministic: source+target → FlowGraph (no LLM)
-  └── RbacResolver        — deterministic: graph edges → role assignments
+  ├── YamlParser              — validates schema, two forms: intent or explicit
+  ├── IntentResolver          — deterministic: source+target → FlowGraph (no LLM)
+  └── RbacResolver            — deterministic: graph edges → role assignments
       │
       ▼
 Generator Registry
-  ├── TerraformGenerator  → *.tf + rbac.tf
-  ├── AdfPipelineGenerator→ adf_pipeline.tf
-  ├── GovernanceGenerator → governance.tf
-  ├── QualityGenerator    → quality/*.py + databricks_jobs.tf
-  ├── CiCdGenerator       → .github/workflows/ or azure-pipelines.yml
-  ├── MonitoringGenerator → monitoring.tf
-  ├── AnsibleGenerator    → ansible/playbooks/
-  └── ReadinessGenerator  → tests/readiness/
+  ├── TerraformGenerator      → *.tf + rbac.tf
+  ├── AdfPipelineGenerator    → adf_pipeline.tf
+  ├── GovernanceGenerator     → governance.tf
+  ├── QualityGenerator        → quality/*.py + databricks_jobs.tf
+  ├── CiCdGenerator           → .github/workflows/ or azure-pipelines.yml
+  ├── MonitoringGenerator     → monitoring.tf
+  ├── AnsibleGenerator        → ansible/playbooks/
+  ├── ReadinessGenerator      → tests/readiness/
+  ├── DriftDetectionGenerator → .github/workflows/drift.yml + scripts/drift_notify.py
+  ├── SreDashboardGenerator   → sre/workbook.tf + sre/workbook.json + sre/runbook.md
+  ├── CostOptimizationGenerator → scripts/analyze_costs.py + CI/CD weekly job
+  └── NetworkingGenerator     → network/private_endpoints.tf + dns.tf + sequencing.sh
       │
       ▼
 Output files
@@ -120,7 +133,7 @@ Output files
 
 ## Quickstart
 
-**Requirements:** Python 3.11+, optional Anthropic API key (only needed for NL input)
+**Requirements:** Python 3.11+, optional LLM API key (only needed for NL input)
 
 ```bash
 git clone https://github.com/Cheesehead100/dataforge
@@ -144,16 +157,47 @@ dataforge generate --from data-product.yaml --dry-run
 dataforge generate --from data-product.yaml -o ./infra/customer360
 ```
 
-### Natural language input (requires `ANTHROPIC_API_KEY`)
+### Natural language input (any LLM provider)
 
 ```bash
 cp .env.example .env
-# edit .env: ANTHROPIC_API_KEY=sk-ant-...
+# edit .env — choose your provider:
 
+# Option 1: Anthropic (default)
+DATAFORGE_ANTHROPIC_API_KEY=sk-ant-...
+
+# Option 2: OpenAI or any compatible endpoint
+pip install 'dataforge[openai]'
+DATAFORGE_LLM_PROVIDER=openai
+DATAFORGE_OPENAI_API_KEY=sk-...
+
+# Option 3: Groq (fast inference, free tier available)
+DATAFORGE_LLM_PROVIDER=groq
+DATAFORGE_OPENAI_API_KEY=gsk_...
+
+# Option 4: Ollama (local, no API key needed)
+DATAFORGE_LLM_PROVIDER=ollama
+DATAFORGE_OPENAI_BASE_URL=http://localhost:11434/v1
+DATAFORGE_OPENAI_PARSE_MODEL=llama3
+```
+
+```bash
 dataforge generate "ADF reads from SQL MI, transforms in Databricks, writes to Fabric Lakehouse"
 dataforge generate "..." --no-llm-polish   # skeleton only, no AI polish pass
 dataforge explain  "..."                   # show FlowGraph + RBAC plan, write nothing
 ```
+
+### Self-service portal
+
+A form-based web UI for data engineers who prefer not to write YAML:
+
+```bash
+pip install 'dataforge[portal]'
+dataforge portal            # opens at http://localhost:8000
+dataforge portal --port 8080 --reload
+```
+
+Fill in the form → click **Preview** to see the FlowGraph and generated YAML → click **Download** to get a ZIP of the full Terraform stack.
 
 ### After generation
 
@@ -170,6 +214,9 @@ ansible-playbook -i ansible/inventory.yml ansible/playbooks/configure_databricks
 
 # 3. Run readiness gate (blocks promotion if anything is wrong)
 bash tests/readiness/run_readiness.sh
+
+# 4. Private endpoints — use the generated sequencing script if networking.private_endpoints: true
+bash network/sequencing.sh   # 6-stage deploy that respects Azure DNS propagation
 ```
 
 ---
@@ -280,6 +327,11 @@ monitoring:
     alert_at_pct: [75, 90, 100]
     alert_channel: "email:finops@company.com"
 
+networking:
+  vnet_cidr: 10.20.0.0/16
+  private_endpoints: true
+  databricks_vnet_injection: true
+
 compute:
   databricks:
     node_type: Standard_DS3_v2
@@ -323,7 +375,7 @@ Options:
   --resource-group TEXT   Resource group name
   --app-name TEXT         Application name for resource naming
   --no-validate           Skip Checkov validation
-  --no-llm-polish         Skeleton-only; no Sonnet polish pass (NL path only)
+  --no-llm-polish         Skeleton-only; no LLM polish pass (NL path only)
   --overwrite             Overwrite existing output directory
   --dry-run               Print FlowGraph + RBAC plan, write nothing
   --json-output           Emit machine-readable JSON to stdout
@@ -331,8 +383,23 @@ Options:
 
 dataforge explain DESCRIPTION      Parse NL input, show FlowGraph + RBAC plan, no files
 dataforge validate DIRECTORY       Run Checkov on an existing Terraform directory
+dataforge portal [OPTIONS]         Launch the self-service web portal
+  --host TEXT                        Bind host [default: 0.0.0.0]
+  --port INTEGER                     Port [default: 8000]
+  --reload                           Auto-reload on code changes (dev mode)
 dataforge --version
 ```
+
+### LLM provider environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATAFORGE_LLM_PROVIDER` | `anthropic` | `anthropic` \| `openai` \| `groq` \| `ollama` \| `mistral` \| `together` \| `azure_openai` |
+| `DATAFORGE_ANTHROPIC_API_KEY` | — | Required when provider is `anthropic` |
+| `DATAFORGE_OPENAI_API_KEY` | — | Required for all OpenAI-compatible providers |
+| `DATAFORGE_OPENAI_BASE_URL` | provider default | Custom endpoint — use for Ollama, Azure OpenAI, self-hosted |
+| `DATAFORGE_OPENAI_PARSE_MODEL` | `gpt-4o` | Model for structured JSON extraction (NL → FlowGraph) |
+| `DATAFORGE_OPENAI_GENERATE_MODEL` | `gpt-4o` | Model for HCL polish pass |
 
 ---
 
@@ -354,11 +421,15 @@ All generated Terraform enforces security-first defaults:
 ## Running Tests
 
 ```bash
-pytest                          # all tests (≥70% coverage enforced)
+pytest                          # all tests (≥80% coverage enforced)
 pytest tests/unit/              # unit tests only (no API calls, no Azure)
 pytest -k "readiness"           # readiness generator tests
 pytest -k "adf"                 # ADF pipeline generator tests
+pytest -k "networking"          # private endpoint / DNS generator tests
+pytest -k "portal"              # self-service portal tests
 ```
+
+Current suite: **473 tests, 8 skipped, 85% coverage**.
 
 ---
 
@@ -373,10 +444,10 @@ pytest -k "adf"                 # ADF pipeline generator tests
 | L5 | ✅ Shipped | CI/CD pipelines (GitHub Actions + Azure DevOps) with 7 security gates |
 | L6 | ✅ Shipped | Azure Monitor alerts + cost budgets (`monitoring.tf`) |
 | L7 | ✅ Shipped | Ansible playbooks (Databricks REST API — cluster policy, secret scopes, Unity Catalog) |
-| L8 | ✅ Shipped | Readiness validation suite — pytest + shell runner, blocks promotion on failure |
+| L8 | ✅ Shipped | Readiness validation suite + nightly drift detection |
 | ADF | ✅ Shipped | ADF linked services, datasets, Copy pipeline, schedule trigger (`adf_pipeline.tf`) |
-| L9 | Planned | Cost optimization engine + SRE dashboard |
-| L10 | Planned | Self-service portal |
+| L9 | ✅ Shipped | Cost optimization engine (weekly rightsizing) + SRE dashboard + per-product runbooks |
+| L10 | ✅ Shipped | Private endpoint networking generator + self-service web portal + multi-LLM support |
 
 ---
 
@@ -393,7 +464,8 @@ See [`docs/NORTH_STAR.md`](docs/NORTH_STAR.md) for the full vision: 8 enterprise
 1. **New RBAC rule** — edit `src/dataforge/rbac/matrix.py`, write the test in `tests/unit/test_rbac_matrix.py` first (TDD required).
 2. **New generator** — subclass `BaseGenerator` in `src/dataforge/generation/generators/`, add a Jinja2 template, register in `DataProductGenerator`.
 3. **New node type** — add to `constants.py`, add a template in `generation/templates/`, register in `rbac/matrix.py`.
-4. All PRs must pass `pytest` with ≥70% coverage and a clean `checkov` run on generated output.
+4. **New LLM provider** — add a case to `build_adapter()` in `src/dataforge/llm/adapter.py`; extend `OpenAiAdapter` for OpenAI-compatible endpoints or implement `LlmAdapter` for a custom SDK.
+5. All PRs must pass `pytest` with ≥80% coverage and a clean `checkov` run on generated output.
 
 ---
 
