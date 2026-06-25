@@ -56,7 +56,7 @@ packages = ["src/dataforge"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=dataforge --cov-report=term-missing --cov-fail-under=70"
+addopts = "--cov=dataforge --cov-report=term-missing --cov-fail-under=80"
 
 [tool.coverage.run]
 source = ["src/dataforge"]
