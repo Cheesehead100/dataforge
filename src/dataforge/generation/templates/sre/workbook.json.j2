@@ -1,0 +1,158 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+
+    {
+      "type": 1,
+      "content": {
+        "json": "# {{ product_name }} — Platform SRE Dashboard\n**Environment:** {{ env }} | **SLA Freshness:** {{ sla_freshness_hours }}h | **Monthly Budget:** ${{ monthly_budget }}\n\nUse this dashboard to monitor pipeline health, data freshness, quality scores, and cloud costs."
+      },
+      "name": "header"
+    },
+
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "timerange",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "type": 4,
+            "isRequired": true,
+            "value": { "durationMs": 86400000 },
+            "label": "Time Range"
+          }
+        ]
+      },
+      "name": "parameters"
+    },
+
+    {
+      "type": 1,
+      "content": { "json": "## Pipeline Health" },
+      "name": "section_pipeline"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.DATAFACTORY\"\n| where Category == \"PipelineRuns\"\n| where TimeGenerated {TimeRange}\n| summarize Total=count(), Failed=countif(Status==\"Failed\"), Succeeded=countif(Status==\"Succeeded\") by bin(TimeGenerated, 1h)\n| project TimeGenerated, Total, Failed, Succeeded, SuccessRate=round(100.0 * Succeeded / Total, 1)",
+        "size": 0,
+        "title": "ADF Pipeline Runs — Success Rate",
+        "queryType": 0,
+        "visualization": "timechart",
+        "chartSettings": {
+          "seriesLabelSettings": [
+            { "seriesName": "SuccessRate", "label": "Success %", "color": "green" },
+            { "seriesName": "Failed",      "label": "Failed",     "color": "red" }
+          ]
+        }
+      },
+      "name": "pipeline_health_chart"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.DATAFACTORY\"\n| where Category == \"PipelineRuns\" and Status == \"Failed\"\n| where TimeGenerated {TimeRange}\n| project TimeGenerated, PipelineName, ErrorMessage=tostring(parse_json(tostring(error_s)).message)\n| order by TimeGenerated desc\n| take 20",
+        "size": 1,
+        "title": "Recent Pipeline Failures",
+        "queryType": 0,
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            { "columnMatch": "TimeGenerated", "formatter": 6 },
+            { "columnMatch": "ErrorMessage",  "formatter": 1 }
+          ]
+        }
+      },
+      "name": "pipeline_failures_table"
+    },
+
+    {
+      "type": 1,
+      "content": { "json": "## Data Freshness" },
+      "name": "section_freshness"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.DATABRICKS\"\n| where Category == \"jobs\"\n| where TimeGenerated {TimeRange}\n| extend JobName=tostring(parse_json(Properties).jobName)\n| summarize LastRun=max(TimeGenerated) by JobName\n| extend FreshnessHours=round((now() - LastRun) / 1h, 1)\n| extend SlaBreached=iff(FreshnessHours > {{ sla_freshness_hours }}, \"⚠️ Breached\", \"✅ OK\")\n| project JobName, LastRun, FreshnessHours, SlaBreached\n| order by FreshnessHours desc",
+        "size": 1,
+        "title": "Data Freshness vs SLA ({{ sla_freshness_hours }}h threshold)",
+        "queryType": 0,
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            { "columnMatch": "FreshnessHours", "formatter": 8, "formatOptions": { "palette": "redGreen", "customMinValue": 0, "customMaxValue": {{ sla_freshness_hours * 2 }} } },
+            { "columnMatch": "SlaBreached",    "formatter": 1 }
+          ]
+        }
+      },
+      "name": "freshness_table"
+    },
+
+{% if quality_tables %}
+    {
+      "type": 1,
+      "content": { "json": "## Data Quality" },
+      "name": "section_quality"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.DATABRICKS\"\n| where Category == \"jobs\"\n| where TimeGenerated {TimeRange}\n| extend JobName=tostring(parse_json(Properties).jobName)\n| where JobName startswith \"dq-\"\n| summarize Total=count(), Passed=countif(ResultState==\"SUCCESS\"), Failed=countif(ResultState==\"FAILED\") by JobName\n| extend QualityScore=round(100.0 * Passed / Total, 1)\n| project JobName, Total, Passed, Failed, QualityScore\n| order by QualityScore asc",
+        "size": 1,
+        "title": "Data Quality Job Results",
+        "queryType": 0,
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            { "columnMatch": "QualityScore", "formatter": 8, "formatOptions": { "palette": "redGreen", "customMinValue": 0, "customMaxValue": 100 } },
+            { "columnMatch": "Failed",        "formatter": 18, "formatOptions": { "thresholdsOptions": "icons", "thresholdsGrid": [{ "operator": ">", "thresholdValue": "0", "representation": "2" }] } }
+          ]
+        }
+      },
+      "name": "quality_table"
+    },
+{% endif %}
+
+    {
+      "type": 1,
+      "content": { "json": "## Cost" },
+      "name": "section_cost"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureActivity\n| where TimeGenerated {TimeRange}\n| where ResourceGroup =~ \"{{ metadata.resource_group }}\"\n| summarize Operations=count() by ResourceProvider, bin(TimeGenerated, 1d)\n| order by TimeGenerated desc",
+        "size": 0,
+        "title": "Resource Activity by Provider (cost proxy)",
+        "queryType": 0,
+        "visualization": "barchart"
+      },
+      "name": "cost_chart"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "**Monthly Budget:** ${{ monthly_budget }}\n\nFor detailed cost breakdown, view the [Cost Management budget](https://portal.azure.com/#view/Microsoft_Azure_CostManagement/Menu/~/budgets) for resource group `{{ metadata.resource_group }}`."
+      },
+      "name": "cost_footer"
+    },
+
+    {
+      "type": 1,
+      "content": { "json": "## Key Metrics\n\n| Metric | Target |\n|---|---|\n| Deployment Success Rate | > 98% |\n| Pipeline Reliability | > 99.5% |\n| MTTR | < 30 min |\n| Data Freshness Compliance | > 99% within {{ sla_freshness_hours }}h SLA |\n| Data Quality Score | > 95% rules passing |\n| Monthly Cost | < ${{ monthly_budget }} |" },
+      "name": "sla_table"
+    }
+
+  ],
+  "styleSettings": {},
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

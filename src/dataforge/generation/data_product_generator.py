@@ -1,32 +1,38 @@
-"""DataProductGenerator — orchestrates all platform layer generators (L3–L8)."""
+"""DataProductGenerator — orchestrates all platform layer generators (L3–L9)."""
 
 from __future__ import annotations
 
 from dataforge.generation.generators.adf_pipeline import AdfPipelineGenerator
 from dataforge.generation.generators.ansible import AnsibleGenerator
 from dataforge.generation.generators.cicd import CiCdGenerator
+from dataforge.generation.generators.cost_optimizer import CostOptimizationGenerator
+from dataforge.generation.generators.drift import DriftDetectionGenerator
 from dataforge.generation.generators.governance import GovernanceGenerator
 from dataforge.generation.generators.monitoring import MonitoringGenerator
 from dataforge.generation.generators.quality import QualityGenerator
 from dataforge.generation.generators.readiness import ReadinessGenerator
+from dataforge.generation.generators.sre_dashboard import SreDashboardGenerator
 from dataforge.models.data_product import DataProduct
 from dataforge.models.flow_graph import FlowGraph
 from dataforge.models.rbac import RbacResult
 from dataforge.models.terraform import GenerationResult
 
 _GENERATORS = [
-    GovernanceGenerator(),    # L3
-    QualityGenerator(),       # L4
-    CiCdGenerator(),          # L5
-    MonitoringGenerator(),    # L6
-    AnsibleGenerator(),       # L7
-    ReadinessGenerator(),     # L8
-    AdfPipelineGenerator(),   # ADF pipelines (data-plane, not a numbered loop)
+    GovernanceGenerator(),         # L3
+    QualityGenerator(),            # L4
+    CiCdGenerator(),               # L5
+    MonitoringGenerator(),         # L6
+    AnsibleGenerator(),            # L7
+    ReadinessGenerator(),          # L8 – readiness gate
+    DriftDetectionGenerator(),     # L8 – drift detection (completes L8)
+    AdfPipelineGenerator(),        # ADF pipelines (data-plane)
+    SreDashboardGenerator(),       # L9 – SRE workbook + runbook
+    CostOptimizationGenerator(),   # L9 – cost optimisation engine
 ]
 
 
 class DataProductGenerator:
-    """Runs L3–L7 generators against a DataProduct and returns all extra output files."""
+    """Runs L3–L9 generators against a DataProduct and returns all extra output files."""
 
     def generate(
         self,
