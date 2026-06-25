@@ -6,6 +6,292 @@
 
 ---
 
+## Problem Space: Why DataForge Exists
+
+These are the eight recurring pain points DataForge is built to eliminate. Each pain point maps directly to one or more platform layers.
+
+---
+
+### Pain Point 1 — Terraform Creates Infrastructure, But Not a Working Data Platform
+
+**What happens:**
+
+Terraform apply succeeds. Engineers see green. But users cannot access catalogs, run jobs, read storage, or create schemas — because RBAC, Unity Catalog grants, service principals, storage credentials, and workspace assignments are incomplete. Unity Catalog alone requires multiple objects and role assignments spanning the Azure and Databricks control planes.
+
+```
+terraform apply  →  SUCCESS
+databricks job   →  FAILED: 403 Access Denied
+```
+
+**Why it happens:**  Terraform provisions resources. It does not configure data-plane access. The gap between "resource created" and "resource usable" is manual, error-prone, and undocumented.
+
+**DataForge solution:**  The Platform Readiness Layer closes this gap automatically.
+
+```
+Terraform (create resources)
+    ↓
+Ansible (configure data-plane access)
+    ↓
+Readiness Validation (assert everything works)
+    ↓
+Smoke Tests (end-to-end data write + read)
+```
+
+Validation assertions run before any environment promotion:
+- `assert catalog_exists()`
+- `assert schema_exists()`
+- `assert storage_accessible()`
+- `assert service_principal_can_read()`
+
+**Covered by:** Layer 4 (Ansible) + Layer 5 (Readiness Validation)
+
+---
+
+### Pain Point 2 — Private Endpoint Hell
+
+**What happens:**
+
+Secure Azure environments using private endpoints break Terraform deployment order. Resources require data-plane access before private networking is fully established. Storage containers cannot be created if the storage firewall is active before the private endpoint is resolved. The failure is non-obvious and environment-specific.
+
+```
+Stage 1: Storage Account created
+Stage 2: Terraform tries to create container
+Stage 3: Blocked by firewall — no private endpoint yet
+Stage 4: Plan fails mid-run
+```
+
+**Why it happens:**  Terraform does not natively understand Azure's private endpoint DNS propagation dependencies. Engineers must sequence resources manually — knowledge that lives in tribal memory, not code.
+
+**DataForge solution:**  DataForge generates explicit dependency chains based on the networking configuration in the Data Product YAML. Engineers declare `private_endpoints: true`; DataForge emits the correct sequencing:
+
+```
+Stage 1: Network Foundation   (VNet, subnets, NSGs, private DNS zones)
+Stage 2: Private Endpoints    (one per service — storage, databricks, keyvault)
+Stage 3: Storage Containers   (only after endpoint DNS is resolvable)
+Stage 4: Databricks Config    (workspace, cluster policy, mounts)
+```
+
+No engineer needs to understand Azure networking internals.
+
+**Covered by:** Layer 3 (Terraform sequencing), Layer 2 (DataForge Engine dependency resolution)
+
+---
+
+### Pain Point 3 — Terraform Drift
+
+**What happens:**
+
+Teams deploy with Terraform, then make changes in the UI. Months later:
+
+```
+terraform plan
+
+842 changes detected
+```
+
+Drift is the #1 CI/CD problem in shared Databricks environments. Manual UI changes to cluster policies, secrets, job configurations, and Unity Catalog grants invalidate the Terraform state silently.
+
+**DataForge solution:**  Git is the enforced source of truth. DataForge generates:
+
+1. **Production workspace locking** — read-only UI mode enforced via Databricks workspace policy
+2. **Nightly drift detection** — scheduled `terraform plan` run; results routed to alerting channels
+3. **Alert routing** — drift reports sent to Teams, Slack, or ServiceNow based on severity
+
+```
+Git  →  Source of Truth
+  ↓
+Nightly terraform plan (CI/CD scheduled job)
+  ↓
+Delta detected?  →  Alert  →  Teams / Slack / ServiceNow
+No delta?        →  Platform health metric: DRIFT_FREE = true
+```
+
+**Covered by:** Layer 5 (CI/CD pipeline), Phase 2 roadmap (drift detection loop L6)
+
+---
+
+### Pain Point 4 — Data Engineers Become Accidental Cloud Engineers
+
+**What happens:**
+
+Data engineers hired to build pipelines spend weeks on Terraform providers, RBAC, networking, private DNS zones, and role assignments. Instead of:
+
+```python
+df.write.format("delta").save(path)
+```
+
+They write:
+```hcl
+resource "azurerm_role_assignment" "..." { ... }
+resource "azurerm_private_dns_zone_virtual_network_link" "..." { ... }
+```
+
+**Why it happens:**  There is no abstraction layer between "I need a pipeline" and "here is working infrastructure."
+
+**DataForge solution:**  The Data Product YAML is the only interface a data engineer ever touches.
+
+```yaml
+product: customer360
+
+source:
+  type: sqlserver
+
+target:
+  type: fabric
+```
+
+DataForge generates: Terraform, Databricks, RBAC, networking, monitoring, CI/CD, governance, quality checks. The engineer never writes infrastructure code.
+
+**Covered by:** Layer 1 (Data Product YAML intent form) + Layer 2 (DataForge Engine)
+
+---
+
+### Pain Point 5 — CI/CD Works in Dev But Fails in Prod
+
+**What happens:**
+
+Dev and prod workspaces have different catalog names, storage accounts, and endpoint configurations. Hardcoded references break promotion.
+
+```
+Dev:   catalog = sandbox,    storage = devlake
+Prod:  catalog = enterprise, storage = prodlake
+```
+
+Pipeline runs successfully in dev. Fails immediately in prod with `catalog not found` or `container does not exist`.
+
+**Why it happens:**  Developers hardcode environment-specific values. There is no abstraction layer that generates environment-correct outputs from a single source of truth.
+
+**DataForge solution:**  The Environment Abstraction Layer generates environment-correct resources from a single YAML declaration.
+
+```yaml
+environment: prod
+```
+
+DataForge resolves this to prod catalog names, prod storage accounts, prod private endpoints, prod monitoring thresholds — with no hardcoded values in any generated file. All resource names follow `{type}-{app}-{env}` convention enforced by the DataForge Engine.
+
+**Covered by:** Layer 2 (naming enforcement + environment mapping), `environments:` block in Data Product YAML
+
+---
+
+### Pain Point 6 — Production Data Quality Issues
+
+**What happens:**
+
+Most pipeline failures are not infrastructure failures. The pipeline deploys successfully but produces unusable data:
+
+- Duplicate records
+- Schema drift (upstream adds/removes columns silently)
+- Null primary keys
+- Malformed timestamps
+- Late-arriving data outside the SLA window
+
+Governance and data trust remain the biggest scaling challenges in enterprise data platforms.
+
+**DataForge solution:**  Mandatory quality gates at each medallion layer.
+
+```
+Bronze → raw data ingested
+Silver → deduplicated · validated · standardized
+Gold   → business rules applied · quality score tracked
+```
+
+DataForge generates PySpark validation scripts (or Great Expectations suites) per table from the `quality.checks` section of the Data Product YAML:
+
+```yaml
+quality:
+  checks:
+    - layer: silver
+      table: customer_events
+      rules:
+        - not_null: [customer_id, event_timestamp]
+        - unique: [event_id]
+        - accepted_values: { column: status, values: [active, churned] }
+        - freshness_within: { column: event_timestamp, hours: 6 }
+```
+
+Scripts run as Databricks jobs; exit 1 blocks promotion.
+
+**Covered by:** Layer 4 (QualityGenerator, L4 implementation) + Phase 3 roadmap
+
+---
+
+### Pain Point 7 — Nobody Owns Production Operations
+
+**What happens:**
+
+After deployment, production incidents spiral into blame triangles:
+
+```
+Platform Team:  "It's a pipeline issue."
+Data Team:      "It's an infrastructure issue."
+Cloud Team:     "It's a network issue."
+```
+
+No team has a complete view of pipeline health, cost, drift, or SLA compliance. There is no single owner of platform operations.
+
+**DataForge solution:**  The Platform SRE Layer creates a defined operational ownership model with generated runbooks, dashboards, and automated alerting.
+
+| Responsibility | Owner | Automation |
+|---|---|---|
+| Pipeline health | Platform SRE | Nightly health check job |
+| Cost monitoring | Platform SRE | Budget alerts at 75/90/100% |
+| Drift detection | Platform SRE | Scheduled terraform plan |
+| Recovery automation | Platform SRE | Generated runbook per product |
+| SLA tracking | Platform SRE | Freshness metric vs. SLA target |
+
+**Key metrics tracked:**
+
+| Metric | Target |
+|---|---|
+| MTTR (Mean Time to Recovery) | < 30 min |
+| Pipeline Success Rate | > 99.5% |
+| Data Freshness Compliance | > 99% within SLA |
+| Cost per Pipeline / month | tracked, trending down |
+
+**Covered by:** Operations Framework, Layer 6 (MonitoringGenerator), Phase 3 roadmap (SRE dashboard loop L9)
+
+---
+
+### Pain Point 8 — Cost Explosions in Production
+
+**What happens:**
+
+Databricks clusters are overprovisioned and left running. Retry storms multiply cluster costs 10×. Streaming state grows unbounded. Small-file compaction is forgotten. A single misconfigured autoscale bounds turns a $500/month pipeline into a $5,000/month incident.
+
+```
+Cluster running at 10% utilization
+No auto-termination configured
+28 days × 16 workers × $0.40/worker-hr = $4,300 wasted
+```
+
+**DataForge solution:**  Policy-based compute generated at deployment time, not discovered post-incident.
+
+Terraform generates approved cluster policies (small / medium / large) with enforced bounds. Ansible configures:
+- Auto-termination (30 min idle default)
+- Runtime version pinning
+- Spot instance preference in dev/test
+
+Monitoring generates cost budget alerts:
+
+```yaml
+monitoring:
+  cost:
+    monthly_budget_usd: 1000
+    alert_at_pct: [75, 90, 100]
+```
+
+Future: AI-driven rightsizing recommendations based on cluster utilization metrics.
+
+```
+Cluster running at 10% utilization for 7 days
+→ Recommendation: downsize from 16 workers to 4
+→ Estimated savings: $640/month
+```
+
+**Covered by:** Layer 6 (MonitoringGenerator cost budgets), Layer 7 (Ansible cluster policy), Phase 3 roadmap (cost optimization engine L9)
+
+---
+
 ## The Core Shift
 
 | | Today | North Star |
@@ -371,15 +657,15 @@ Each loop = one generator layer + tests + end-to-end verification. Schema locked
 | Loop | Phase | Delivers | What You Learn |
 |---|---|---|---|
 | **L1** ✅ | 1 | NL → Terraform + RBAC | RBAC is deterministic, not LLM work |
-| **L2** | 1 | YAML input path + intent resolver | YAML → FlowGraph bridge; schema validation |
-| **L3** | 2 | CI/CD generator (GHA + ADO) | Multi-env promotion with all 7 gates |
-| **L4** | 2 | Ansible generator | Gap between `terraform apply` and a running platform |
-| **L5** | 2 | Readiness validation suite | What "deployment complete" actually means |
-| **L6** | 2 | Drift detection | State divergence patterns in real deployments |
-| **L7** | 3 | Unity Catalog + governance | Governance as code: metastore → catalog → grants |
-| **L8** | 3 | Data quality framework | Production-readiness for data, not just infra |
-| **L9** | 3 | Cost optimization engine + SRE dashboard | Platform operations as a product |
-| **L10** | 4 | Self-service portal | End-to-end: non-engineer can deploy a data product |
+| **L2** ✅ | 1 | YAML input path + deterministic intent resolver | YAML → FlowGraph bridge; schema validation |
+| **L3** ✅ | 1 | Unity Catalog + governance generator | Governance as code: metastore → catalog → grants |
+| **L4** ✅ | 2 | PySpark data quality scripts + manifest | Production-readiness for data, not just infra |
+| **L5** ✅ | 2 | CI/CD generator (GHA + ADO) with security gates | Multi-env promotion with checkov, tfsec, infracost |
+| **L6** ✅ | 2 | Monitoring + cost budget generator | Azure Monitor alerts wired at deploy time, not post-incident |
+| **L7** ✅ | 2 | Ansible configuration playbooks | Gap between `terraform apply` and a running platform |
+| **L8** | 2 | Readiness validation suite + drift detection | What "deployment complete" actually means; Pain Points 1 & 3 |
+| **L9** | 3 | Cost optimization engine + SRE dashboard | Platform operations as a product; Pain Points 7 & 8 |
+| **L10** | 4 | Self-service portal | End-to-end: non-engineer deploys a data product in < 1 day |
 
 ---
 
@@ -396,16 +682,18 @@ Each loop = one generator layer + tests + end-to-end verification. Schema locked
 ## Current State vs. North Star
 
 ```
-Infrastructure + RBAC:      ████████████████████  100% (L1 ✅)
-YAML input + intent form:   ░░░░░░░░░░░░░░░░░░░░    0% (L2 next)
-CI/CD generation:           ████░░░░░░░░░░░░░░░░   20% (ADO template exists)
-Ansible:                    ░░░░░░░░░░░░░░░░░░░░    0% (L4)
-Readiness validation:       ░░░░░░░░░░░░░░░░░░░░    0% (L5)
-Drift detection:            ░░░░░░░░░░░░░░░░░░░░    0% (L6)
-Governance (Unity):         ░░░░░░░░░░░░░░░░░░░░    0% (L7)
-Data quality:               ░░░░░░░░░░░░░░░░░░░░    0% (L8)
-Cost optimization engine:   ░░░░░░░░░░░░░░░░░░░░    0% (L9)
-Self-service portal:        ░░░░░░░░░░░░░░░░░░░░    0% (L10)
+Infrastructure + RBAC:      ████████████████████  100% ✅ L1
+YAML input + intent form:   ████████████████████  100% ✅ L2
+Governance (Unity Catalog): ████████████████████  100% ✅ L3
+Data quality scripts:       ████████████████████  100% ✅ L4
+CI/CD generation:           ████████████████████  100% ✅ L5
+Monitoring + cost budgets:  ████████████████████  100% ✅ L6
+Ansible configuration:      ████████████████████  100% ✅ L7
+Readiness validation:       ░░░░░░░░░░░░░░░░░░░░    0%  L8 next
+Drift detection:            ░░░░░░░░░░░░░░░░░░░░    0%  L8
+Cost optimization engine:   ░░░░░░░░░░░░░░░░░░░░    0%  L9
+SRE dashboard:              ░░░░░░░░░░░░░░░░░░░░    0%  L9
+Self-service portal:        ░░░░░░░░░░░░░░░░░░░░    0%  L10
 ```
 
 ## Principles
