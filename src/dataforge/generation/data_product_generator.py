@@ -8,6 +8,7 @@ from dataforge.generation.generators.cicd import CiCdGenerator
 from dataforge.generation.generators.cost_optimizer import CostOptimizationGenerator
 from dataforge.generation.generators.drift import DriftDetectionGenerator
 from dataforge.generation.generators.governance import GovernanceGenerator
+from dataforge.generation.generators.networking import NetworkingGenerator
 from dataforge.generation.generators.monitoring import MonitoringGenerator
 from dataforge.generation.generators.quality import QualityGenerator
 from dataforge.generation.generators.readiness import ReadinessGenerator
@@ -18,6 +19,7 @@ from dataforge.models.rbac import RbacResult
 from dataforge.models.terraform import GenerationResult
 
 _GENERATORS = [
+    NetworkingGenerator(),         # L10 – private endpoints + DNS + sequencing
     GovernanceGenerator(),         # L3
     QualityGenerator(),            # L4
     CiCdGenerator(),               # L5
