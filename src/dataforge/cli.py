@@ -28,6 +28,8 @@ from dataforge.models.flow_graph import FlowMetadata
 from dataforge.output.writer import OutputWriter
 from dataforge.parsing.adf_importer import AdfImporter, AdfImportError
 from dataforge.parsing.intent_parser import IntentParser, ParseError
+from dataforge.parsing.intent_resolver import IntentResolver
+from dataforge.parsing.yaml_parser import YamlParser
 from dataforge.rbac.resolver import RbacResolver
 from dataforge.validation.checkov_runner import CheckovRunner
 
@@ -46,7 +48,9 @@ def cli() -> None:
 
 
 @cli.command()
-@click.argument("description")
+@click.argument("description", required=False, default=None)
+@click.option("--from", "from_file", type=click.Path(path_type=Path), default=None,
+              help="Path to a data-product.yaml file (alternative to DESCRIPTION)")
 @click.option("-o", "--output", type=click.Path(path_type=Path), default=Path("./output"), show_default=True)
 @click.option("--region", default="eastus", show_default=True, help="Azure region")
 @click.option("--resource-group", default="rg-dataforge", show_default=True)
@@ -59,7 +63,8 @@ def cli() -> None:
 @click.option("--json-output", is_flag=True, help="Emit machine-readable JSON to stdout")
 @click.option("-v", "--verbose", count=True, help="Increase verbosity (-v, -vv)")
 def generate(
-    description: str,
+    description: str | None,
+    from_file: Path | None,
     output: Path,
     region: str,
     resource_group: str,
@@ -72,14 +77,83 @@ def generate(
     json_output: bool,
     verbose: int,
 ) -> None:
-    """Generate Terraform from a natural-language data flow description.
+    """Generate Terraform from a natural-language description or data-product.yaml.
 
     \b
-    Example:
+    Examples:
         dataforge generate "Read Parquet from ADLS, transform in Databricks, write to Fabric Lakehouse"
+        dataforge generate --from data-product.yaml
     """
     _configure_logging(verbose)
 
+    if description and from_file:
+        console.print("[red]Error:[/red] Provide either DESCRIPTION or --from, not both.")
+        sys.exit(1)
+    if not description and not from_file:
+        console.print("[red]Error:[/red] Provide either a DESCRIPTION argument or --from <file>.")
+        sys.exit(1)
+
+    # ── YAML path (no LLM needed for parsing) ────────────────────────────────
+    if from_file:
+        try:
+            product = YamlParser().parse_file(from_file)
+        except ParseError as exc:
+            console.print(f"[red]Parse failed:[/red] {exc}")
+            sys.exit(1)
+
+        try:
+            graph = IntentResolver().resolve(product, env=env)
+        except ValueError as exc:
+            console.print(f"[red]Resolution failed:[/red] {exc}")
+            sys.exit(1)
+
+        console.print(
+            Panel(
+                f"[bold]DataProduct:[/bold] [cyan]{product.name}[/cyan] "
+                f"({'intent' if product.is_intent_form else 'explicit'} form)\n"
+                f"[bold]FlowGraph:[/bold] {len(graph.nodes)} nodes · {len(graph.edges)} edges\n"
+                + "\n".join(f"  - {n.type.value}: [cyan]{n.name}[/cyan]" for n in graph.nodes),
+                title=f"Loaded from {from_file.name}",
+                border_style="blue",
+            )
+        )
+
+        rbac = RbacResolver().resolve(graph)
+        _print_rbac_plan(rbac)
+
+        if dry_run:
+            console.print("[yellow]Dry run — no files written.[/yellow]")
+            return
+
+        result = HclGenerator(Renderer(), None, None).generate(graph, rbac, llm_polish=False)
+
+        try:
+            paths = OutputWriter().write(result.files, output, overwrite=overwrite)
+        except FileExistsError as exc:
+            console.print(f"[red]{exc}[/red]")
+            sys.exit(1)
+
+        console.print(f"\n[green]OK[/green] Wrote {len(paths)} files to [cyan]{output}/[/cyan]:")
+        for p in paths:
+            console.print(f"  {p.name}")
+
+        if result.warnings:
+            console.print("\n[yellow]Warnings:[/yellow]")
+            for w in result.warnings:
+                console.print(f"  [yellow]WARN[/yellow] {w}")
+
+        if not no_validate:
+            with console.status("[bold cyan]Running Checkov…"):
+                report = CheckovRunner().run(output)
+            _print_checkov_report(report)
+
+        if json_output:
+            out = {"files": [f.filename for f in result.files], "warnings": result.warnings}
+            print(json.dumps(out, indent=2))
+
+        return
+
+    # ── NL path (existing behaviour — unchanged) ──────────────────────────────
     try:
         settings = get_settings()
     except Exception as exc:

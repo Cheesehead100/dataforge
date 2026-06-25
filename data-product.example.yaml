@@ -1,0 +1,181 @@
+# DataForge Data Product — Example (full schema)
+# Copy this file, fill in your values, then run:
+#   dataforge generate --from data-product.yaml
+#
+# All sections except metadata + pipeline are optional.
+# Omitted sections use secure defaults.
+
+apiVersion: dataforge/v1
+kind: DataProduct
+
+# ── Identity ──────────────────────────────────────────────────────────────────
+metadata:
+  name: customer-analytics
+  description: "Customer 360: CRM events → Databricks transform → Fabric Lakehouse"
+  owner: data-engineering@company.com
+  domain: marketing
+  sensitivity: confidential        # public | internal | confidential | restricted
+  sla:
+    freshness: 4h
+    availability: 99.9%
+
+# ── Target Environments ───────────────────────────────────────────────────────
+environments:
+  dev:
+    subscription_id: 00000000-0000-0000-0000-000000000000
+    region: eastus
+    resource_group: rg-customer-analytics-dev
+  test:
+    subscription_id: 00000000-0000-0000-0000-000000000000
+    region: eastus
+    resource_group: rg-customer-analytics-test
+  prod:
+    subscription_id: 00000000-0000-0000-0000-000000000000
+    region: eastus
+    resource_group: rg-customer-analytics-prod
+
+# ── Pipeline Graph ────────────────────────────────────────────────────────────
+pipeline:
+  nodes:
+    - id: crm_events
+      type: eventhub
+      name: "CRM Event Stream"
+
+    - id: bronze
+      type: adls
+      name: "Bronze Lake"
+
+    - id: transform
+      type: databricks
+      name: "Customer Transform Workspace"
+
+    - id: secrets
+      type: key_vault
+      name: "Platform Key Vault"
+
+    - id: warehouse
+      type: fabric_lakehouse
+      name: "Customer Analytics Lakehouse"
+
+    - id: ingest
+      type: adf
+      name: "CRM Ingest Factory"
+
+  edges:
+    - from: crm_events
+      to: ingest
+      operation: stream
+    - from: ingest
+      to: bronze
+      operation: write
+    - from: ingest
+      to: transform
+      operation: trigger
+    - from: transform
+      to: bronze
+      operation: read
+    - from: transform
+      to: secrets
+      operation: secret_get
+    - from: transform
+      to: warehouse
+      operation: write
+
+# ── Compute (optional) ────────────────────────────────────────────────────────
+compute:
+  databricks:
+    node_type: Standard_DS3_v2
+    autoscale:
+      min_workers: 2
+      max_workers: 8
+    runtime: "14.3.x-scala2.12"
+    cluster_policy: job_cluster
+    spot_enabled: true
+
+# ── Storage: Medallion Architecture (optional) ────────────────────────────────
+storage:
+  medallion:
+    enabled: true
+    bronze:
+      retention_days: 90
+      immutable: true
+    silver:
+      retention_days: 365
+    gold:
+      retention_days: 1825
+
+# ── Governance (optional) — requires Unity Catalog metastore ─────────────────
+governance:
+  unity_catalog:
+    metastore: unity-catalog-prod
+    catalog: customer_analytics
+    schemas:
+      - name: bronze
+      - name: silver
+      - name: gold
+    grants:
+      - principal: data-engineers@company.com
+        privileges: [USE_CATALOG, USE_SCHEMA, SELECT, MODIFY]
+        on: catalog
+      - principal: data-analysts@company.com
+        privileges: [USE_CATALOG, USE_SCHEMA, SELECT]
+        on: [silver, gold]
+  lineage: true
+  audit: true
+  classification:
+    pii_columns: [customer_id, email, phone]
+
+# ── Data Quality (optional) ───────────────────────────────────────────────────
+quality:
+  framework: great_expectations
+  checks:
+    - layer: silver
+      table: customer_events
+      rules:
+        - not_null: [customer_id, event_timestamp]
+        - unique: [event_id]
+        - accepted_values:
+            column: event_type
+            values: [click, purchase, return, churn]
+        - freshness_within:
+            column: event_timestamp
+            hours: 6
+
+# ── CI/CD (optional) ─────────────────────────────────────────────────────────
+cicd:
+  provider: github_actions          # github_actions | azure_devops
+  gates:
+    - terraform_plan
+    - checkov_scan
+    - cost_estimate
+  environments:
+    - name: dev
+      auto_deploy: true
+    - name: test
+      approval_required: true
+    - name: prod
+      approval_required: true
+      smoke_test: true
+
+# ── Monitoring (optional) ────────────────────────────────────────────────────
+monitoring:
+  alerts:
+    - name: pipeline_failure
+      metric: adf_pipeline_run_failed
+      threshold: 1
+      severity: critical
+      channel: email:data-engineering@company.com
+    - name: freshness_breach
+      metric: data_freshness_hours
+      threshold: 6
+      severity: warning
+      channel: email:data-engineering@company.com
+  cost:
+    monthly_budget_usd: 1000
+    alert_at_pct: [75, 90, 100]
+
+# ── Networking (optional — secure defaults if omitted) ────────────────────────
+networking:
+  vnet_cidr: 10.20.0.0/16
+  private_endpoints: true
+  databricks_vnet_injection: true
