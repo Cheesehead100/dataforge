@@ -106,7 +106,7 @@ Delta detected?  →  Alert  →  Teams / Slack / ServiceNow
 No delta?        →  Platform health metric: DRIFT_FREE = true
 ```
 
-**Covered by:** Layer 5 (CI/CD pipeline), Phase 2 roadmap (drift detection loop L6)
+**Covered by:** Layer 5 (CI/CD pipeline), Layer 8 (DriftDetectionGenerator — nightly scheduled terraform plan + alert routing)
 
 ---
 
@@ -248,7 +248,7 @@ No team has a complete view of pipeline health, cost, drift, or SLA compliance. 
 | Data Freshness Compliance | > 99% within SLA |
 | Cost per Pipeline / month | tracked, trending down |
 
-**Covered by:** Operations Framework, Layer 6 (MonitoringGenerator), Phase 3 roadmap (SRE dashboard loop L9)
+**Covered by:** Operations Framework, Layer 6 (MonitoringGenerator), Layer 9 (SreDashboardGenerator — Azure Monitor Workbook + per-product runbook)
 
 ---
 
@@ -280,15 +280,18 @@ monitoring:
     alert_at_pct: [75, 90, 100]
 ```
 
-Future: AI-driven rightsizing recommendations based on cluster utilization metrics.
+DataForge now ships a cost optimization engine (L9):
 
 ```
 Cluster running at 10% utilization for 7 days
 → Recommendation: downsize from 16 workers to 4
 → Estimated savings: $640/month
+→ Action: update compute.databricks.autoscale.max_workers: 4
 ```
 
-**Covered by:** Layer 6 (MonitoringGenerator cost budgets), Layer 7 (Ansible cluster policy), Phase 3 roadmap (cost optimization engine L9)
+Weekly scheduled CI job queries Azure Monitor DBU metrics and Cost Management API, classifies recommendations by priority (high/medium/low), opens a GitHub issue for high-priority findings, and outputs a Rich CLI report.
+
+**Covered by:** Layer 6 (MonitoringGenerator cost budgets), Layer 7 (Ansible cluster policy), Layer 9 (CostOptimizationGenerator — weekly rightsizing engine + scheduled CI job)
 
 ---
 
@@ -559,18 +562,29 @@ The existing `Renderer` pattern extends to a full generator registry. Same `Data
 ```
 DataProduct model
        │
-       ├──▶ TerraformGenerator     → *.tf + rbac.tf           [L1 ✅]
-       ├──▶ GovernanceGenerator    → unity_catalog.tf          [L3]
-       │                             Databricks grants JSON
-       ├──▶ QualityGenerator       → quality/expectations/     [L4]
-       ├──▶ CiCdGenerator          → .github/workflows/        [L5]
-       │                             azdo/pipelines/
-       │                             Artifacts: plan, security report, cost report
-       ├──▶ MonitoringGenerator    → monitoring.tf             [L6]
-       │                             cost budget + chargeback alerts
-       ├──▶ AnsibleGenerator       → ansible/playbooks/        [L7]
-       └──▶ ReadinessGenerator     → tests/readiness/          [L8]
-                                     per-env blocking gate suite
+       ├──▶ TerraformGenerator      → *.tf + rbac.tf               [L1 ✅]
+       ├──▶ GovernanceGenerator     → unity_catalog.tf              [L3 ✅]
+       │                              Databricks grants JSON
+       ├──▶ QualityGenerator        → quality/expectations/         [L4 ✅]
+       │                              databricks_jobs.tf (DQ schedulers)
+       ├──▶ CiCdGenerator           → .github/workflows/            [L5 ✅]
+       │                              azure-pipelines.yml
+       │                              Artifacts: plan, security, cost report
+       ├──▶ MonitoringGenerator     → monitoring.tf                 [L6 ✅]
+       │                              cost budget + chargeback alerts
+       ├──▶ AnsibleGenerator        → ansible/playbooks/            [L7 ✅]
+       │                              requirements.yml + inventory.yml
+       ├──▶ ReadinessGenerator      → tests/readiness/              [L8 ✅]
+       │                              run_readiness.sh (blocking gate)
+       ├──▶ DriftDetectionGenerator → .github/workflows/drift.yml   [L8 ✅]
+       │                              scripts/drift_notify.py
+       ├──▶ AdfPipelineGenerator    → adf_pipeline.tf               [ADF ✅]
+       │                              linked services + datasets + triggers
+       ├──▶ SreDashboardGenerator   → sre/workbook.tf               [L9 ✅]
+       │                              sre/workbook.json (Azure Monitor)
+       │                              sre/runbook.md (per-product)
+       └──▶ CostOptimizationGenerator → scripts/analyze_costs.py    [L9 ✅]
+                                        .github/workflows/cost.yml
 ```
 
 ---
@@ -643,10 +657,10 @@ PROD  → controlled release → smoke test → readiness validation
 
 | Phase | Timeline | Scope |
 |---|---|---|
-| **Phase 1** ✅ | 0–3 months | Data product schema · Terraform generation · Azure deployment · CI/CD integration |
-| **Phase 2** | 3–6 months | Ansible automation · Readiness validation · Security automation · Drift detection |
-| **Phase 3** | 6–12 months | Data quality framework · Governance automation · Cost optimization engine · Platform SRE dashboard |
-| **Phase 4** | 12+ months | Self-service portal · AI-assisted deployment recommendations · Automated remediation · Multi-cloud |
+| **Phase 1** ✅ | 0–3 months | Data product schema · Terraform generation · Azure deployment · CI/CD integration (L1–L3) |
+| **Phase 2** ✅ | 3–6 months | Ansible automation · Readiness validation · Drift detection · ADF pipelines (L4–L8 + ADF) |
+| **Phase 3** ✅ | 6–12 months | Cost optimization engine · Platform SRE workbook · Per-product runbooks (L9) |
+| **Phase 4** | 12+ months | Networking generator · Self-service portal · AI-assisted deployment recommendations · Automated remediation · Multi-cloud (L10) |
 
 ---
 
@@ -659,13 +673,14 @@ Each loop = one generator layer + tests + end-to-end verification. Schema locked
 | **L1** ✅ | 1 | NL → Terraform + RBAC | RBAC is deterministic, not LLM work |
 | **L2** ✅ | 1 | YAML input path + deterministic intent resolver | YAML → FlowGraph bridge; schema validation |
 | **L3** ✅ | 1 | Unity Catalog + governance generator | Governance as code: metastore → catalog → grants |
-| **L4** ✅ | 2 | PySpark data quality scripts + manifest | Production-readiness for data, not just infra |
+| **L4** ✅ | 2 | PySpark data quality scripts + Databricks job TF | Production-readiness for data, not just infra |
 | **L5** ✅ | 2 | CI/CD generator (GHA + ADO) with security gates | Multi-env promotion with checkov, tfsec, infracost |
 | **L6** ✅ | 2 | Monitoring + cost budget generator | Azure Monitor alerts wired at deploy time, not post-incident |
-| **L7** ✅ | 2 | Ansible configuration playbooks | Gap between `terraform apply` and a running platform |
-| **L8** | 2 | Readiness validation suite + drift detection | What "deployment complete" actually means; Pain Points 1 & 3 |
-| **L9** | 3 | Cost optimization engine + SRE dashboard | Platform operations as a product; Pain Points 7 & 8 |
-| **L10** | 4 | Self-service portal | End-to-end: non-engineer deploys a data product in < 1 day |
+| **L7** ✅ | 2 | Ansible playbooks (REST API, Unity Catalog bootstrap) | Gap between `terraform apply` and a running platform |
+| **L8** ✅ | 2 | Readiness gate suite + drift detection CI/CD | What "deployment complete" actually means; Pain Points 1 & 3 |
+| **ADF** ✅ | 2 | ADF pipeline: linked services + datasets + triggers | Data-plane: infrastructure exists but nothing moves data |
+| **L9** ✅ | 3 | Cost optimization engine + SRE workbook + runbook | Platform operations as a product; Pain Points 7 & 8 |
+| **L10** | 4 | Networking generator + self-service portal | End-to-end: non-engineer deploys a data product in < 1 day |
 
 ---
 
@@ -689,11 +704,13 @@ Data quality scripts:       █████████████████�
 CI/CD generation:           ████████████████████  100% ✅ L5
 Monitoring + cost budgets:  ████████████████████  100% ✅ L6
 Ansible configuration:      ████████████████████  100% ✅ L7
-Readiness validation:       ░░░░░░░░░░░░░░░░░░░░    0%  L8 next
-Drift detection:            ░░░░░░░░░░░░░░░░░░░░    0%  L8
-Cost optimization engine:   ░░░░░░░░░░░░░░░░░░░░    0%  L9
-SRE dashboard:              ░░░░░░░░░░░░░░░░░░░░    0%  L9
-Self-service portal:        ░░░░░░░░░░░░░░░░░░░░    0%  L10
+Readiness validation:       ████████████████████  100% ✅ L8
+Drift detection:            ████████████████████  100% ✅ L8
+ADF pipeline generation:    ████████████████████  100% ✅ ADF
+Cost optimization engine:   ████████████████████  100% ✅ L9
+SRE dashboard + runbooks:   ████████████████████  100% ✅ L9
+Networking generator:       ░░░░░░░░░░░░░░░░░░░░    0%  L10 next  (Pain Point 2)
+Self-service portal:        ░░░░░░░░░░░░░░░░░░░░    0%  L10       (North Star end state)
 ```
 
 ## Principles
