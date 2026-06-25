@@ -7,7 +7,7 @@ resource "azurerm_mssql_managed_instance" "{{ node.id }}" {
   license_type                 = "BasePrice"
   sku_name                     = "GP_Gen5"
   storage_size_in_gb           = 32
-  subnet_id                    = TODO_REPLACE_WITH_SQL_MI_SUBNET_ID
+  subnet_id                    = var.sql_mi_subnet_id
   vcores                       = 4
   tags                         = var.tags
 

@@ -71,6 +71,18 @@ class CheckovRunner:
             return CheckovReport(raw_output="checkov timed out")
 
         raw = result.stdout
+
+        # Non-zero exit with no JSON output means checkov itself failed to run
+        # (e.g. ModuleNotFoundError, syntax error, no TF files found).
+        # Treat this as a validation failure rather than silently returning ok=True.
+        if result.returncode not in (0, 1) and not raw.strip():
+            logger.warning("checkov exited %d with no JSON output; stderr: %s",
+                           result.returncode, result.stderr[:500])
+            return CheckovReport(
+                failed=1,
+                raw_output=result.stderr or f"checkov exited {result.returncode} with no output",
+            )
+
         return self._parse(raw)
 
     def _parse(self, raw: str) -> CheckovReport:

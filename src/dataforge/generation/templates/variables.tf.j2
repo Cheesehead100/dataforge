@@ -81,6 +81,16 @@ variable "{{ node.id }}_workspace_id" {
 }
 
 {% endfor %}
+{% for node in sql_mi_nodes %}
+# ── SQL MI networking ─────────────────────────────────────────────────────────
+# SQL Managed Instance requires a dedicated /29 or larger subnet with no other resources.
+# Create it in your VNet and provide the resource ID here.
+variable "sql_mi_subnet_id" {
+  description = "Resource ID of the dedicated subnet for SQL Managed Instance '{{ node.name }}'. The subnet must be delegated to Microsoft.Sql/managedInstances and have no other resources."
+  type        = string
+}
+
+{% endfor %}
 {% for node in aks_nodes %}
 # ── AKS Workload Identity: {{ node.name }} ────────────────────────────────────
 variable "{{ node.id }}_workload_namespace" {
