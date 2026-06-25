@@ -26,6 +26,7 @@ from dataforge.generation.hcl_generator import HclGenerator
 from dataforge.generation.renderer import Renderer
 from dataforge.models.flow_graph import FlowMetadata
 from dataforge.output.writer import OutputWriter
+from dataforge.generation.data_product_generator import DataProductGenerator
 from dataforge.parsing.adf_importer import AdfImporter, AdfImportError
 from dataforge.parsing.intent_parser import IntentParser, ParseError
 from dataforge.parsing.intent_resolver import IntentResolver
@@ -125,21 +126,29 @@ def generate(
             console.print("[yellow]Dry run — no files written.[/yellow]")
             return
 
-        result = HclGenerator(Renderer(), None, None).generate(graph, rbac, llm_polish=False)
+        tf_result = HclGenerator(Renderer(), None, None).generate(graph, rbac, llm_polish=False)
+        platform_result = DataProductGenerator().generate(product, graph, rbac)
+        all_files = tf_result.files + platform_result.files
+        all_warnings = tf_result.warnings + platform_result.warnings
 
         try:
-            paths = OutputWriter().write(result.files, output, overwrite=overwrite)
+            paths = OutputWriter().write(all_files, output, overwrite=overwrite)
         except FileExistsError as exc:
             console.print(f"[red]{exc}[/red]")
             sys.exit(1)
 
-        console.print(f"\n[green]OK[/green] Wrote {len(paths)} files to [cyan]{output}/[/cyan]:")
+        tf_count = len(tf_result.files)
+        platform_count = len(platform_result.files)
+        console.print(
+            f"\n[green]OK[/green] Wrote {len(paths)} files to [cyan]{output}/[/cyan] "
+            f"({tf_count} Terraform · {platform_count} platform):"
+        )
         for p in paths:
             console.print(f"  {p.name}")
 
-        if result.warnings:
+        if all_warnings:
             console.print("\n[yellow]Warnings:[/yellow]")
-            for w in result.warnings:
+            for w in all_warnings:
                 console.print(f"  [yellow]WARN[/yellow] {w}")
 
         if not no_validate:
