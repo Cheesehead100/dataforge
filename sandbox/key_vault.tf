@@ -1,3 +1,6 @@
+# WARNING — SANDBOX ONLY.  purge_protection_enabled=false and
+# soft_delete_retention_days=7 are intentionally relaxed for clean teardown.
+# Production Key Vaults must use purge_protection_enabled=true and ≥90 days retention.
 resource "azurerm_key_vault" "main" {
   name                          = "kv-${local.prefix}-001"
   resource_group_name           = azurerm_resource_group.main.name

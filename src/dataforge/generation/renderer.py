@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, TemplateNotFound
@@ -13,6 +14,21 @@ from dataforge.models.rbac import RbacResult
 from dataforge.models.terraform import TerraformFile
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+# Matches Jinja2 block/expression/comment delimiters that could break template rendering
+# if present in user-supplied strings (node names, tag values, etc.).
+_JINJA_META_RE = re.compile(r"(\{\{|\}\}|\{%|%\}|\{#|#\})")
+
+
+def _jinja_safe(value: str) -> str:
+    """Escape Jinja2 metacharacters in a user-derived string.
+
+    Replaces ``{{``, ``}}``, ``{%``, ``%}``, ``{#``, ``#}`` with their
+    doubled-brace equivalents so Jinja2 treats them as literal text rather
+    than template directives.  Applied to every user-controlled string that
+    enters the template rendering context.
+    """
+    return _JINJA_META_RE.sub(lambda m: m.group(0).replace("{", "{{").replace("}", "}}"), value)
 
 # Template selected per node type present in the graph
 NODE_TYPE_TEMPLATE: dict[NodeType, str] = {
@@ -104,10 +120,12 @@ class Renderer:
             "metadata": graph.metadata,
             "nodes": graph.nodes,
             "edges": graph.edges,
-            "env": graph.metadata.environment,
-            "location": graph.metadata.location,
-            "resource_group": graph.metadata.resource_group,
-            "app_name": graph.metadata.application_name,
+            # Scalar strings that originate from user input are sanitised to prevent
+            # Jinja2 metacharacter injection ({{ }}, {% %}, {# #}).
+            "env":            _jinja_safe(graph.metadata.environment or ""),
+            "location":       _jinja_safe(graph.metadata.location or ""),
+            "resource_group": _jinja_safe(graph.metadata.resource_group or ""),
+            "app_name":       _jinja_safe(graph.metadata.application_name or ""),
             "tags": graph.metadata.tags,
             "adf_nodes": graph.nodes_of_type(NodeType.ADF),
             "databricks_nodes": graph.nodes_of_type(NodeType.DATABRICKS),

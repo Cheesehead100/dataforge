@@ -36,13 +36,11 @@ class ParseError(Exception):
 class IntentParser:
     """Turns a natural-language pipeline description into a validated FlowGraph."""
 
-    # How many times to retry when the model produces invalid output.
-    # Each retry includes the previous error so the model can self-correct.
     MAX_RETRIES = 2
+    # Hard cap on description length — limits prompt-injection surface and accidental API cost.
+    MAX_DESCRIPTION_LEN = 2_000
 
     def __init__(self, adapter: LlmAdapter) -> None:
-        # The adapter abstracts away which LLM provider is in use.
-        # IntentParser doesn't know or care whether it's Anthropic, OpenAI, Groq, etc.
         self._adapter = adapter
 
     def parse(self, description: str, metadata_overrides: dict | None = None) -> FlowGraph:
@@ -59,11 +57,13 @@ class IntentParser:
         Raises:
             ParseError: If the LLM fails to produce a valid graph after MAX_RETRIES attempts.
         """
-        # Get the JSON Schema for FlowGraph — this is what the LLM must output.
-        # Pydantic generates this automatically from the model's field definitions.
-        schema = FlowGraph.model_json_schema()
+        if len(description) > self.MAX_DESCRIPTION_LEN:
+            raise ParseError(
+                f"Description too long ({len(description)} chars). "
+                f"Keep it under {self.MAX_DESCRIPTION_LEN} characters."
+            )
 
-        # Build the initial conversation (a user message containing the description).
+        schema = FlowGraph.model_json_schema()
         messages = build_parse_messages(description)
         last_error: Exception | None = None
 
