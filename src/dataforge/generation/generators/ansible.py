@@ -1,4 +1,11 @@
-"""L7: AnsibleGenerator — post-provisioning configuration playbooks for Databricks."""
+"""L7: AnsibleGenerator — post-provisioning configuration playbooks for Databricks.
+
+Terraform provisions Azure resources; Ansible handles the second-day configuration
+that the azurerm provider cannot express — cluster creation, Unity Catalog schema
+setup, and Key Vault secret injection into Databricks secrets. Generates an
+inventory, a configure_databricks playbook, and a requirements file that the CI
+pipeline runs immediately after terraform apply.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +25,8 @@ def _has_databricks(graph: FlowGraph) -> bool:
 
 
 class AnsibleGenerator(BaseGenerator):
+    """Generates Ansible inventory and Databricks configuration playbooks for this product."""
+
     def applicable(self, product: DataProduct) -> bool:
         return True  # generated for any product; playbooks are no-ops if resources not present
 

@@ -1,3 +1,14 @@
+{#
+  networking.tf.j2 — VNet, NSGs, subnets, and NSG associations for Databricks VNet injection.
+  Provisions: azurerm_virtual_network, two NSGs (dbw_private, dbw_public) with
+  Databricks-required rules, three subnets (dbw_private, dbw_public, private_endpoints),
+  and subnet NSG associations.
+  Context vars: databricks_nodes (guards the entire file), app_name, env.
+  Env logic: none — network topology is environment-agnostic.
+  Constraint: The NSG rule set is the minimum required by Databricks NetworkIntentPolicy;
+  adding or removing rules may cause workspace creation to fail with policy conflicts.
+  This file is only emitted when databricks_nodes is non-empty.
+#}
 {% if databricks_nodes %}
 # ============================================================
 # Networking — Databricks VNet injection

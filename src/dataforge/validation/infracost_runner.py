@@ -1,4 +1,14 @@
-"""Wraps the infracost CLI and parses its JSON output."""
+"""
+infracost runner — invokes the infracost CLI and parses its cost breakdown JSON.
+
+infracost is an optional validator available via the ``validate`` CLI command and
+the ``--skip-infracost`` flag.  It requires the infracost binary on PATH plus a
+registered API key (``INFRACOST_API_KEY``).  A non-zero exit is treated as a soft
+error (InfracostReport.error is populated) rather than a hard failure, because cost
+estimation is advisory — it does not gate the generation or the validate exit code.
+Resources in the parsed report are sorted by monthly cost (descending) so the most
+expensive resources surface first in the CLI output.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 
 class InfracostResourceCost(BaseModel):
+    """Per-resource cost breakdown extracted from an infracost project report."""
+
     name: str
     monthly_cost: float = 0.0
     monthly_quantity: float = 0.0
@@ -21,6 +33,12 @@ class InfracostResourceCost(BaseModel):
 
 
 class InfracostReport(BaseModel):
+    """Aggregated cost report from infracost breakdown.
+
+    ``installed=False`` when infracost is not on PATH; ``error`` is non-empty when
+    infracost ran but returned a non-zero exit code (e.g. missing API key).
+    """
+
     total_monthly_cost: float = 0.0
     total_hourly_cost: float = 0.0
     currency: str = "USD"
@@ -90,6 +108,7 @@ class InfracostRunner:
             total_monthly_cost=total_monthly,
             total_hourly_cost=total_hourly,
             currency=currency,
-            resources=sorted(resources, key=lambda r: r.monthly_cost, reverse=True),
+            # Sort descending by monthly cost so the CLI prints the biggest spenders first.
+        resources=sorted(resources, key=lambda r: r.monthly_cost, reverse=True),
             raw_output=raw,
         )

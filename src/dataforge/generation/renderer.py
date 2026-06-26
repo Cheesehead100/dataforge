@@ -1,4 +1,15 @@
-"""Jinja2-based deterministic renderer for Terraform templates."""
+"""Central Jinja2 rendering engine for the DataForge generation layer.
+
+Sits immediately after the FlowGraph and RbacResult are built. The Renderer
+selects the correct Jinja2 template for each NodeType present in the graph,
+then renders a deterministic set of .tf and .yml files that form the base
+Terraform skeleton. No LLM involvement here — that optional polish pass lives
+in HclGenerator.
+
+autoescape is intentionally disabled: the target format is HCL/YAML, not HTML,
+so entity-escaping would corrupt the output. User-derived strings are sanitised
+via _jinja_safe() before entering the template context.
+"""
 
 from __future__ import annotations
 
@@ -51,13 +62,15 @@ ALWAYS_RENDER_EXTRA = ["azure-pipelines.yml.j2"]
 
 
 class Renderer:
+    """Thin wrapper around a Jinja2 Environment that renders templates against a dict context."""
+
     def __init__(self) -> None:
         self._env = Environment(
             loader=FileSystemLoader(str(TEMPLATES_DIR)),
-            undefined=StrictUndefined,
+            undefined=StrictUndefined,  # fail loudly on missing variables rather than silently emitting ""
             trim_blocks=True,
             lstrip_blocks=True,
-            autoescape=False,
+            autoescape=False,  # HCL/YAML output — HTML escaping would corrupt it
         )
 
     def render(self, template_name: str, ctx: dict) -> str:
@@ -65,6 +78,11 @@ class Renderer:
         return template.render(**ctx)
 
     def render_all(self, graph: FlowGraph, rbac: RbacResult) -> list[TerraformFile]:
+        """Render the complete set of Terraform files for the given graph and RBAC result.
+
+        File ordering matters for readability of the ZIP output but not for Terraform
+        correctness (HCL has no declaration order requirement).
+        """
         ctx = self._build_context(graph, rbac)
         files: list[TerraformFile] = []
 
@@ -89,7 +107,9 @@ class Renderer:
             content = self.render(template_name, ctx)
             files.append(TerraformFile(filename=filename, content=content))
 
-        # Per-node-type resource files (deduplicated by template)
+        # Per-node-type resource files (deduplicated by template).
+        # Multiple graph nodes of the same type share one template (e.g. two ADLS nodes
+        # both use storage.tf.j2 — the template iterates adls_nodes internally).
         rendered_templates: set[str] = set()
         for node in graph.nodes:
             template_name = NODE_TYPE_TEMPLATE.get(node.type)
@@ -106,6 +126,13 @@ class Renderer:
         return files
 
     def _build_context(self, graph: FlowGraph, rbac: RbacResult) -> dict:
+        """Assemble the Jinja2 template context from the graph and RBAC result.
+
+        Exposes typed node lists per service (e.g. adf_nodes, databricks_nodes) so
+        templates can iterate without filtering. Scalar metadata fields that originate
+        from user input are sanitised here — the rest of the context is typed model
+        objects that never contain raw user strings.
+        """
         node_by_id = {n.id: n for n in graph.nodes}
 
         def _principal_ref(node_id: str) -> str:

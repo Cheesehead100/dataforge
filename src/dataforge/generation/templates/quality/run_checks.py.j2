@@ -1,3 +1,14 @@
+{#
+  quality/run_checks.py.j2 — PySpark data quality check script for a single table.
+  Runs as a Databricks job; evaluates rules (not_null, unique, accepted_values,
+  row_count_between, row_count_gt, value_between, freshness_within) against
+  catalog.layer.table and exits 0 (all pass) or 1 (any fail).
+  Context vars: product_name, catalog, layer, table, rules (list of rule objects).
+  Env logic: none — checks are environment-agnostic; the table FQN includes the
+  catalog name which is environment-specific via Unity Catalog.
+  Constraint: Must run on a cluster with access to the Unity Catalog; the SparkSession
+  is obtained via builder.getOrCreate() so cluster config is controlled by the job.
+#}
 """
 DataForge Quality Checks — {{ product_name }}
 Layer: {{ layer }}  Table: {{ catalog }}.{{ layer }}.{{ table }}

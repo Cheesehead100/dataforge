@@ -1,4 +1,11 @@
-"""AdfPipelineGenerator — TF resources for ADF linked services, datasets, and pipelines."""
+"""AdfPipelineGenerator — Terraform resources for ADF linked services, datasets, and copy pipelines.
+
+Activated whenever the FlowGraph contains at least one ADF node. Walks the graph
+to discover (source → ADF → sink) chains and renders one
+azurerm_data_factory_pipeline resource per chain, along with the matching linked
+services and datasets. Only runs after the base ADF resource is emitted by the
+renderer (data_factory.tf).
+"""
 
 from __future__ import annotations
 
@@ -76,6 +83,8 @@ def _downstream_sinks(graph: FlowGraph, adf_node: FlowNode) -> list[FlowNode]:
 
 
 class AdfPipelineGenerator(BaseGenerator):
+    """Generates ADF pipeline Terraform resources for every source→ADF→sink path found in the graph."""
+
     def applicable(self, product: DataProduct) -> bool:
         return True  # always attempt; produces empty result if no ADF in graph
 

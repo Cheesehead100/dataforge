@@ -1,4 +1,13 @@
-"""Wraps the tfsec CLI and parses its JSON output."""
+"""
+tfsec runner — invokes the tfsec security scanner and parses its JSON report.
+
+tfsec is an optional validator available via the ``validate`` CLI command and
+the ``--skip-tfsec`` flag.  Unlike checkov (which ships as a Python package),
+tfsec is a standalone Go binary that must be on PATH; the runner checks for its
+presence with shutil.which before attempting to call it.  ``ok`` is defined as
+zero CRITICAL and HIGH findings; MEDIUM/LOW are reported for visibility but do
+not cause a non-zero exit code from the validate command.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 class TfsecFinding(BaseModel):
+    """A single security finding from tfsec, normalised from its JSON result entry."""
+
     rule_id: str
     description: str
     severity: str = "UNKNOWN"
@@ -22,6 +33,12 @@ class TfsecFinding(BaseModel):
 
 
 class TfsecReport(BaseModel):
+    """Aggregated results from a tfsec scan run.
+
+    ``installed=False`` when tfsec is not on PATH — callers should render this
+    as a skip rather than a failure so users without tfsec can still generate.
+    """
+
     critical: int = 0
     high: int = 0
     medium: int = 0
@@ -56,6 +73,8 @@ class TfsecRunner:
             logger.warning("tfsec timed out after 120s")
             return TfsecReport(raw_output="tfsec timed out")
 
+        # tfsec writes findings to stdout as JSON and may emit progress/warnings to
+        # stderr.  Fall back to stderr only when stdout is empty (e.g. early crash).
         return self._parse(result.stdout or result.stderr)
 
     def _parse(self, raw: str) -> TfsecReport:

@@ -1,4 +1,10 @@
-"""L6: MonitoringGenerator — Azure Monitor alerts, action groups, and cost budgets."""
+"""L6: MonitoringGenerator — Azure Monitor metric alerts, action groups, and consumption budgets.
+
+Only activates when the product declares at least one alert or a cost budget under
+the `monitoring` block. Renders monitoring.tf with azurerm_monitor_metric_alert and
+azurerm_consumption_budget_resource_group resources. Email recipients are deduplicated
+across alerts and the cost budget so each address appears in exactly one action group.
+"""
 
 from __future__ import annotations
 
@@ -64,6 +70,8 @@ def _parse_email_channels(alerts: list[dict]) -> list[dict]:
 
 
 class MonitoringGenerator(BaseGenerator):
+    """Generates Azure Monitor alert rules and cost budgets when the product configures monitoring."""
+
     def applicable(self, product: DataProduct) -> bool:
         if product.monitoring is None:
             return False

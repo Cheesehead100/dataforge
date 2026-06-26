@@ -1,3 +1,15 @@
+{#
+  storage.tf.j2 — ADLS Gen2 storage account + medallion filesystems per ADLS node.
+  Provisions: azurerm_storage_account (HNS enabled, ZRS, StorageV2) and two
+  azurerm_storage_data_lake_gen2_filesystem resources (raw, curated) per node.
+  Context vars: adls_nodes, env.
+  Env logic: prod locks down public_network_access and sets network_rules
+  default_action="Deny"; dev/test leaves public access open so Terraform
+  data-plane ops work without a private pipeline agent.
+  Constraint: If network/private_endpoints.tf is included, remove the inline
+  network_rules block here to avoid a provider conflict with
+  azurerm_storage_account_network_rules.
+#}
 {% for node in adls_nodes %}
 resource "azurerm_storage_account" "{{ node.id }}" {
   name                     = "st${var.application_name}${var.environment}"

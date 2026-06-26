@@ -110,7 +110,8 @@ class AdfImporter:
             name=source_name,
             type=NodeType.ADF,
         )
-        # Include ADF node in the map so activity edges can reference it
+        # The ADF factory itself becomes a node so that activity edges
+        # (e.g. ADF triggers Databricks notebook) have a valid source to attach to.
         all_node_map = {adf_node.id: adf_node, **ls_nodes}
         edges = self._build_edges(pipeline_resources, dataset_resources, all_node_map)
 
@@ -166,7 +167,9 @@ class AdfImporter:
         datasets: list[dict],
         nodes: dict[str, FlowNode],
     ) -> list[FlowEdge]:
-        # Build dataset -> linked-service name index
+        # ADF Copy activities reference datasets, not linked services directly.
+        # We resolve: activity → dataset name → linked service name → node id
+        # using two intermediate indices built here before iterating activities.
         ds_to_ls: dict[str, str] = {}
         for ds in datasets:
             props = ds.get("properties", {})
@@ -184,6 +187,8 @@ class AdfImporter:
         }
 
         edges: list[FlowEdge] = []
+        # Deduplicate edges: the same linked-service pair can appear in many
+        # activities, but we only need one edge per (source, target, operation).
         seen: set[tuple[str, str, str]] = set()
 
         for pipeline in pipelines:
@@ -241,5 +246,10 @@ class AdfImporter:
 
 
 def _slug(name: str) -> str:
-    """Convert arbitrary string to a valid Terraform identifier segment."""
+    """Convert an arbitrary string to a valid Terraform identifier segment.
+
+    The 32-character cap prevents excessively long node IDs from making Terraform
+    resource labels unreadable. ADF names can contain slashes (factory/service)
+    which are lowered and replaced before this function is called.
+    """
     return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")[:32]

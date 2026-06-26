@@ -18,7 +18,13 @@ from dataforge.config import Settings
 
 
 class LlmAdapter(ABC):
-    """Abstract base — all LLM providers implement these two methods."""
+    """Provider-agnostic interface for all LLM calls in DataForge.
+
+    Concrete implementations exist for Anthropic (AnthropicAdapter) and any
+    OpenAI-compatible endpoint (OpenAiAdapter). The rest of DataForge only
+    imports this abstract class, so switching providers requires no changes
+    outside the adapter and build_adapter().
+    """
 
     @abstractmethod
     def complete(self, system: str, messages: list[dict]) -> str:

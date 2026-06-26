@@ -1,4 +1,12 @@
-"""Resolves a DataProduct into a FlowGraph — deterministic, no LLM."""
+"""Converts a DataProduct (from YAML) into a FlowGraph without an LLM call.
+
+This is the deterministic parsing path: given a data-product.yaml, YamlParser
+produces a DataProduct and IntentResolver converts it into a FlowGraph using
+static lookup tables. No network calls are made. This path is faster, cheaper,
+and fully reproducible — the same YAML always produces the same graph.
+
+For the LLM path (natural-language input), see parsing/intent_parser.py.
+"""
 
 from __future__ import annotations
 
@@ -29,7 +37,9 @@ _TARGET_TYPE_MAP: dict[str, NodeType] = {
     "event_hub": NodeType.EVENTHUB,
 }
 
-# Source types that skip ADF (read directly into Databricks)
+# Storage sources (ADLS, Blob) don't need ADF for ingestion — Databricks
+# can read them directly via ABFS/WASBS mount. Using ADF here would add cost
+# without benefit, so these sources skip the ADF ingest node entirely.
 _SKIP_ADF_SOURCES: frozenset[NodeType] = frozenset({NodeType.ADLS, NodeType.BLOB_STORAGE})
 
 # Source type → ingest edge operation
@@ -109,7 +119,9 @@ class IntentResolver:
             ingest_op = _INGEST_OP.get(src_node_type, OperationType.READ)
             edges.append(FlowEdge(source=src_id, target=adf_id, operation=ingest_op))
 
-        # Bronze ADLS (always present unless source is ADLS and target is ADLS — pass-through)
+        # Bronze ADLS is the raw landing zone. Skip it only when source is already ADLS
+        # and the target is also ADLS — in that case the source IS the bronze lake and
+        # adding another ADLS node would create a duplicate resource with no added value.
         include_bronze = not (src_node_type == NodeType.ADLS and tgt_node_type == NodeType.ADLS)
         if use_adf and include_bronze:
             bronze_id = "bronze"
@@ -133,7 +145,10 @@ class IntentResolver:
         nodes.append(FlowNode(id=kv_id, type=NodeType.KEY_VAULT, name=f"{name} Key Vault"))
         edges.append(FlowEdge(source=dbx_id, target=kv_id, operation=OperationType.SECRET_GET))
 
-        # Target node (skip if target is ADLS and we already have bronze = same node)
+        # When both source and target are ADLS (e.g. raw lake → curated lake), the
+        # bronze node was skipped above and we need a distinct silver node as the
+        # Databricks write target. Without this, we'd have only one ADLS node and
+        # the graph would contain no meaningful write edge.
         is_adls_passthrough = (src_node_type == NodeType.ADLS and tgt_node_type == NodeType.ADLS)
         if is_adls_passthrough:
             # Use a distinct silver ADLS node as the output
@@ -179,6 +194,12 @@ class IntentResolver:
     # ── Metadata ──────────────────────────────────────────────────────────────
 
     def _build_metadata(self, product: DataProduct, env: str) -> FlowMetadata:
+        """Build FlowMetadata from the DataProduct, preferring per-environment overrides.
+
+        If product.environments contains an entry for the resolved env, its region
+        and resource_group take precedence over defaults. This lets a single YAML
+        file declare different Azure regions or resource groups per environment.
+        """
         env_spec: EnvironmentSpec | None = None
         if product.environments:
             env_spec = product.environments.get(env)

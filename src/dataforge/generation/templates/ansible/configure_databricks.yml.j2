@@ -1,3 +1,15 @@
+{#
+  ansible/configure_databricks.yml.j2 — Ansible playbook for post-Terraform Databricks setup.
+  Configures: cluster policy (spot-optional, auto-termination=30 min), Key Vault-backed
+  secret scope (when has_key_vault), Unity Catalog metastore assignment + catalog +
+  schemas (when has_unity_catalog), and DBFS quality directory.
+  Context vars: product_name, env, runtime, node_type, min_workers, max_workers,
+  spot_enabled, has_key_vault, has_unity_catalog, catalog, schemas.
+  Env logic: none — playbook is idempotent; 400/409 responses are treated as
+  "already exists" and do not fail the play.
+  Constraint: DATABRICKS_HOST and DATABRICKS_TOKEN must be set before running;
+  Unity Catalog tasks require account-admin or metastore-admin token.
+#}
 ---
 # DataForge Ansible Playbook — Configure Databricks
 # Product: {{ product_name }} | Environment: {{ env }}

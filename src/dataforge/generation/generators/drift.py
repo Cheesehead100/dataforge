@@ -1,4 +1,11 @@
-"""DriftDetectionGenerator — nightly scheduled terraform plan + alert routing (L8 completion)."""
+"""DriftDetectionGenerator — nightly scheduled terraform plan with alert routing (L8 completion).
+
+Generates a CI pipeline that runs `terraform plan` on a cron schedule and routes
+any detected drift to configured channels (email, Teams, Slack, or GitHub job
+summary). Also generates a drift_notify.py helper script that handles the
+channel-specific webhook calls. Together with ReadinessGenerator this completes
+the L8 operational layer.
+"""
 
 from __future__ import annotations
 
@@ -68,6 +75,8 @@ def _cicd_provider(product: DataProduct) -> str:
 
 
 class DriftDetectionGenerator(BaseGenerator):
+    """Generates a nightly drift-detection pipeline and notification helper for every product."""
+
     def applicable(self, product: DataProduct) -> bool:
         return True  # every product needs drift detection
 

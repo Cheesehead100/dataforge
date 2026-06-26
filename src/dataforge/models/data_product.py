@@ -1,4 +1,18 @@
-"""DataProduct model — the unified input schema for data-product.yaml."""
+"""DataProduct — the schema for the data-product.yaml config file.
+
+This is the YAML-first entry point into DataForge. A data-product.yaml is
+parsed by YamlParser into a DataProduct, then converted into a FlowGraph by
+IntentResolver (no LLM involved). Two authoring styles are supported and are
+mutually exclusive:
+
+  Intent form   — describe source + target; IntentResolver builds a canonical
+                  pipeline with ADF → ADLS → Databricks → target automatically.
+  Explicit form — author the full pipeline.nodes/edges list when you need
+                  fine-grained control over the graph topology.
+
+Optional sections (compute, storage, governance, etc.) use extra="allow" so
+future spec loops can introduce new keys without breaking existing parsers.
+"""
 
 from __future__ import annotations
 
@@ -8,11 +22,15 @@ from dataforge.constants import DataSensitivity
 
 
 class SourceSpec(BaseModel):
+    """The data source for intent-form pipelines. extra='allow' accepts provider-specific keys."""
+
     model_config = ConfigDict(extra="allow")
     type: str
 
 
 class TargetSpec(BaseModel):
+    """The data target for intent-form pipelines. extra='allow' accepts provider-specific keys."""
+
     model_config = ConfigDict(extra="allow")
     type: str
 
@@ -22,6 +40,8 @@ class ClassificationSpec(BaseModel):
 
 
 class RetentionSpec(BaseModel):
+    """Data retention in days per medallion layer. Defaults follow a 90 / 365 / 7yr pattern."""
+
     bronze: int = 90
     silver: int = 365
     gold: int = 2555
@@ -57,6 +77,8 @@ class PipelineNodeSpec(BaseModel):
 class PipelineEdgeSpec(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
+    # YAML uses "from"/"to" because they read naturally in config files, but
+    # "from" is a Python keyword so Pydantic must alias it to "source"/"target".
     source: str = Field(alias="from")
     target: str = Field(alias="to")
     operation: str
@@ -101,6 +123,8 @@ class NetworkingSpec(BaseModel):
 # ── Root model ─────────────────────────────────────────────────────────────────
 
 class DataProduct(BaseModel):
+    """Root model for a data-product.yaml. Supports intent form and explicit pipeline form."""
+
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     api_version: str = Field(default="dataforge/v1", alias="apiVersion")

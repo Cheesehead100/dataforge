@@ -1,4 +1,10 @@
-"""L4: QualityGenerator — PySpark data quality checks per medallion layer."""
+"""L4: QualityGenerator — PySpark data quality check scripts and Databricks job definitions.
+
+Only activates when the product declares `quality.checks`. For each declared check,
+renders a PySpark script that runs the specified rules (not_null, unique, freshness,
+etc.) against the named table in the Unity Catalog. Also renders a checks_manifest.json
+summary and a databricks_jobs.tf that schedules the scripts as Databricks Workflows.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +29,8 @@ _RULE_TYPES = {
 
 
 def _parse_checks(raw_checks: list[dict]) -> list[dict]:
+    # rule_cfg can be a list (column names), a dict (typed config), or a scalar —
+    # each shape maps to a different template path in run_checks.py.j2.
     parsed: list[dict] = []
     for check in raw_checks:
         layer = check.get("layer", "silver")
@@ -50,6 +58,8 @@ def _parse_checks(raw_checks: list[dict]) -> list[dict]:
 
 
 class QualityGenerator(BaseGenerator):
+    """Generates per-table PySpark quality check scripts and the Databricks job scheduler."""
+
     def applicable(self, product: DataProduct) -> bool:
         if product.quality is None:
             return False

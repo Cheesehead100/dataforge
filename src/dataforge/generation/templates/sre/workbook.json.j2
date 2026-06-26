@@ -1,3 +1,15 @@
+{#
+  sre/workbook.json.j2 — Azure Monitor Workbook JSON payload for the SRE dashboard.
+  Visualises: ADF pipeline success rate (timechart), recent failures (table),
+  data freshness vs SLA threshold (table), data quality job results (conditional),
+  resource activity / cost proxy (barchart), and SLA targets summary.
+  Context vars: product_name, env, sla_freshness_hours, monthly_budget,
+  quality_tables, metadata.
+  Env logic: data quality section is only included when quality_tables is set.
+  Constraint: Consumed by sre/workbook.tf.j2 via a local_file data source;
+  KQL queries target AzureDiagnostics and AzureActivity which require a Log
+  Analytics workspace with diagnostic settings on all monitored resources.
+#}
 {
   "version": "Notebook/1.0",
   "items": [

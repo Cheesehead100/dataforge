@@ -34,7 +34,11 @@ class ParseError(Exception):
 
 
 class IntentParser:
-    """Turns a natural-language pipeline description into a validated FlowGraph."""
+    """Turns a natural-language pipeline description into a validated FlowGraph.
+
+    This is the LLM-powered path into the system. The YAML path uses
+    YamlParser + IntentResolver instead, which requires no LLM call.
+    """
 
     MAX_RETRIES = 2
     # Hard cap on description length — limits prompt-injection surface and accidental API cost.

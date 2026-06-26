@@ -1,3 +1,14 @@
+{#
+  databricks.tf.j2 — Azure Databricks workspace (Premium SKU) per Databricks node.
+  Provisions: azurerm_databricks_workspace with no_public_ip=true and VNet injection
+  into the subnets from networking.tf.
+  Context vars: databricks_nodes.
+  Env logic: none — workspace config is environment-agnostic; SKU/VNet params
+  are fixed at Premium to support Unity Catalog.
+  Constraint: networking.tf must be rendered first (databricks.tf depends_on the
+  subnet NSG associations); Unity Catalog metastore assignment is commented out
+  and requires a Databricks account admin to execute separately.
+#}
 {% for node in databricks_nodes %}
 resource "azurerm_databricks_workspace" "{{ node.id }}" {
   name                = "dbw-${var.application_name}-${var.environment}"

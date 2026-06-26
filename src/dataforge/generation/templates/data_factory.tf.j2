@@ -1,3 +1,12 @@
+{#
+  data_factory.tf.j2 — Azure Data Factory workspace per ADF node.
+  Provisions: azurerm_data_factory with SystemAssigned managed identity and
+  public_network_enabled=false (private only).
+  Context vars: adf_nodes, location, resource_group, app_name, tags.
+  Env logic: none — ADF is provisioned identically across environments.
+  Constraint: Source control integration (github_configuration / vsts_configuration)
+  is not generated; add manually if required.
+#}
 {% for node in adf_nodes %}
 resource "azurerm_data_factory" "{{ node.id }}" {
   name                = "adf-${var.application_name}-${var.environment}"

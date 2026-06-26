@@ -1,3 +1,12 @@
+{#
+  eventhub.tf.j2 — Event Hub namespace, hub, and consumer group per EventHub node.
+  Provisions: azurerm_eventhub_namespace (Standard SKU, 1 TU, public access off),
+  azurerm_eventhub (4 partitions, 1-day retention), and a dedicated consumer group.
+  Context vars: eventhub_nodes.
+  Env logic: none — throughput units and partition count are fixed at generation time.
+  Constraint: Standard SKU does not support auto-inflate beyond 20 TUs; upgrade
+  to Premium for > 20 TUs or for private endpoint support.
+#}
 {% for node in eventhub_nodes %}
 resource "azurerm_eventhub_namespace" "{{ node.id }}" {
   name                = "evhns-${var.application_name}-${var.environment}"

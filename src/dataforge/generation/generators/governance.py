@@ -1,4 +1,11 @@
-"""L3: GovernanceGenerator — Unity Catalog catalog, schemas, and grants."""
+"""L3: GovernanceGenerator — Databricks Unity Catalog catalog, schemas, and privilege grants.
+
+Only activates when the product YAML declares a `governance.unity_catalog` block.
+Renders governance.tf containing the Databricks catalog, one schema resource per
+declared schema, and databricks_grants resources derived from the normalized grant
+list. Schema names and catalog names are converted to safe Terraform identifiers
+via _safe_id() to avoid HCL parse errors from hyphens and uppercase.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +27,12 @@ def _safe_id(value: str) -> str:
 
 
 def _normalize_grants(grants: list[dict], schemas: list[str]) -> list[dict]:
-    """Expand multi-schema grants into individual grant records for template rendering."""
+    """Expand multi-schema grants into individual grant records for template rendering.
+
+    Handles a subtle pyyaml gotcha: the YAML key `on` is a boolean alias that
+    pyyaml parses as Python True, so we probe both "on" and True to retrieve the
+    target scope.
+    """
     out: list[dict] = []
     for i, g in enumerate(grants):
         # "on" is a YAML boolean alias (true/yes/on) — pyyaml parses it as True
@@ -56,6 +68,8 @@ def _normalize_grants(grants: list[dict], schemas: list[str]) -> list[dict]:
 
 
 class GovernanceGenerator(BaseGenerator):
+    """Generates Unity Catalog governance resources when the product opts into governance."""
+
     def applicable(self, product: DataProduct) -> bool:
         if product.governance is None:
             return False

@@ -1,3 +1,15 @@
+{#
+  drift/drift_notify.py.j2 — Python script that parses terraform plan output and
+  dispatches drift notifications to configured channels.
+  Parses: adds/changes/destroys/replaces counts and changed resource names from
+  terraform plan -detailed-exitcode stdout; classifies severity (none/warning/critical).
+  Notification channels: always writes a JSON report; conditionally includes
+  Teams (Adaptive Card) and Slack (Block Kit) webhook functions.
+  Context vars: product_name, env, notification (has_teams, has_slack,
+  teams_webhook_secret, slack_webhook_secret, email).
+  Env logic: none — channel availability is controlled by notification flags.
+  Constraint: Exits with code 1 on drift or error so the CI/CD pipeline fails.
+#}
 #!/usr/bin/env python3
 """
 DataForge Drift Notification Parser — {{ product_name }}

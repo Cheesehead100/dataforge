@@ -1,4 +1,14 @@
-"""Core data model: the directed graph that represents a data flow."""
+"""FlowGraph — the central intermediate representation of DataForge.
+
+After the parsing layer (IntentParser or IntentResolver) converts user input
+into a FlowGraph, every downstream stage — the RBAC resolver and the Jinja2
+renderer — consumes this object exclusively. Nothing downstream reads the
+original NL description or YAML again.
+
+FlowGraph is an immutable, validated DAG: Pydantic enforces field types and
+required fields, while the model_validators enforce graph-level invariants
+(unique node IDs, edge endpoints exist).
+"""
 
 from __future__ import annotations
 
@@ -8,12 +18,15 @@ from dataforge.constants import DataSensitivity, NodeType, OperationType
 
 
 class FlowNode(BaseModel):
-    """A resource node in the data flow graph."""
+    """A resource node in the data flow graph, representing one Azure service instance."""
 
     model_config = {"extra": "forbid", "frozen": True}
 
     id: str = Field(
         min_length=1,
+        # The id constraint is stricter than a Python identifier: must start with a
+        # lowercase letter so it is safe to embed directly in Terraform resource labels
+        # without quoting or transformation.
         pattern=r"^[a-z][a-z0-9_]*$",
         description="Stable, HCL-safe identifier (lowercase, underscores only)",
     )
@@ -26,7 +39,11 @@ class FlowNode(BaseModel):
 
 
 class FlowEdge(BaseModel):
-    """A directed data movement between two nodes."""
+    """A directed relationship between two nodes that drives RBAC role assignment.
+
+    The edge's operation determines which Azure built-in role the RBAC resolver
+    assigns (e.g. read → Storage Blob Data Reader, write → Storage Blob Data Contributor).
+    """
 
     model_config = {"extra": "forbid", "frozen": True}
 
@@ -43,7 +60,11 @@ class FlowEdge(BaseModel):
 
 
 class FlowMetadata(BaseModel):
-    """Environment and deployment metadata."""
+    """Deployment context that flows through to every generated Terraform resource.
+
+    Fields here become variables in the Jinja2 templates — they control resource
+    group, location, environment suffix, and Azure tags on all emitted resources.
+    """
 
     model_config = {"extra": "forbid"}
 
@@ -60,7 +81,13 @@ class FlowMetadata(BaseModel):
 
 
 class FlowGraph(BaseModel):
-    """The complete data flow graph: nodes, edges, and deployment metadata."""
+    """The complete, validated data flow graph passed between all pipeline stages.
+
+    Invariants guaranteed after construction:
+      - All node ids are unique.
+      - Every edge source and target references an existing node id.
+      - The graph is acyclic (enforced separately by graph_validator.validate_graph).
+    """
 
     model_config = {"extra": "forbid"}
 

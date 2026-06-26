@@ -1,4 +1,13 @@
-"""Prompt builders for the Haiku intent parser."""
+"""System prompt and message builders for the LLM-powered intent parser.
+
+This module owns the text that instructs the LLM how to extract a FlowGraph
+from a natural-language description. The system prompt is intentionally strict:
+it lists the exact allowed node types and operations (derived from the enums in
+constants.py at import time) so the model never invents unsupported values.
+
+Changes to NodeType or OperationType automatically propagate into the prompt
+because the allowed-values lists are built dynamically from the enum members.
+"""
 
 from __future__ import annotations
 

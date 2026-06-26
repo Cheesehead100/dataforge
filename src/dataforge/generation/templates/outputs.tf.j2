@@ -1,3 +1,14 @@
+{#
+  outputs.tf.j2 — Terraform output value declarations for all provisioned resources.
+  Emits outputs for: ADF (id, MSI principal_id), Databricks (id, workspace_url),
+  ADLS Gen2 (id, primary_dfs_endpoint), Key Vault (id, uri),
+  Event Hub (namespace_id, eventhub_name), AKS (id, oidc_issuer_url,
+  workload_client_id, workload_principal_id).
+  Context vars: adf_nodes, databricks_nodes, adls_nodes, kv_nodes,
+  eventhub_nodes, aks_nodes.
+  Env logic: none — outputs are unconditional; empty if the corresponding
+  node list is empty.
+#}
 {% for node in adf_nodes %}
 output "{{ node.id }}_id" {
   value       = azurerm_data_factory.{{ node.id }}.id

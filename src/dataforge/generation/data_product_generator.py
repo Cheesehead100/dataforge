@@ -1,4 +1,12 @@
-"""DataProductGenerator — orchestrates all platform layer generators (L3–L9)."""
+"""DataProductGenerator — fan-out orchestrator for the add-on generation layer.
+
+After HclGenerator produces the base Terraform skeleton (providers, variables,
+per-resource .tf files), DataProductGenerator runs each platform-layer generator
+in the _GENERATORS list and merges their output files and warnings into a single
+GenerationResult. Generators are applied in the order listed — NetworkingGenerator
+runs first so private-endpoint resources exist before other generators may reference
+them, though Terraform itself resolves cross-file dependencies regardless of order.
+"""
 
 from __future__ import annotations
 
@@ -42,6 +50,13 @@ class DataProductGenerator:
         graph: FlowGraph,
         rbac: RbacResult,
     ) -> GenerationResult:
+        """Invoke every applicable generator and collect their files and warnings.
+
+        Each generator's applicable() guard decides whether it contributes output
+        for this product — generators that return False are skipped entirely, so
+        optional layers (e.g. governance, quality) only appear when the product
+        YAML opts into them.
+        """
         all_files = []
         all_warnings: list[str] = []
 

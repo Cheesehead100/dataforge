@@ -1,3 +1,13 @@
+{#
+  rbac.tf.j2 — Azure role assignments derived from the FlowGraph edge analysis.
+  Provisions: one azurerm_role_assignment per edge in rbac.assignments; uses
+  principal_tf_ref() and scope_tf_ref() helpers to resolve Terraform references.
+  Context vars: rbac (RbacResult with assignments, warnings, unresolved),
+  principal_tf_ref(node_id), scope_tf_ref(node_id), metadata.
+  Env logic: none — role assignments are environment-agnostic; SP-backed
+  assignments use count=0 guard when the SP object ID variable is not yet set.
+  Constraint: role_definition_id is a full ARM path so this works across subscriptions.
+#}
 # ============================================================
 # RBAC Role Assignments
 # Generated deterministically by DataForge — DO NOT EDIT.

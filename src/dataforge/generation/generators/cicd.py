@@ -1,4 +1,10 @@
-"""L5: CiCdGenerator — GitHub Actions or Azure DevOps pipeline with full gate sequence."""
+"""L5: CiCdGenerator — GitHub Actions or Azure DevOps pipeline with a full quality gate sequence.
+
+Generates a single CI/CD pipeline file whose provider (GitHub Actions vs Azure DevOps)
+is determined by product.cicd.provider. When no CI/CD config is supplied, defaults to
+GitHub Actions with a standard gate list covering format, validate, security scan,
+unit tests, cost estimate, and policy checks across dev / test / prod environments.
+"""
 
 from __future__ import annotations
 
@@ -29,6 +35,12 @@ _DEFAULT_ENVS = [
 
 
 def _parse_cicd(product: DataProduct) -> dict:
+    """Normalise the product CI/CD config into a flat dict safe for the template context.
+
+    Provider strings are normalised to snake_case so templates can compare with simple
+    equality checks (e.g. `provider == "github_actions"`) regardless of how the user
+    typed them in the YAML.
+    """
     if product.cicd is None:
         return {"provider": "github_actions", "gates": _DEFAULT_GATES, "environments": _DEFAULT_ENVS}
 
@@ -51,6 +63,8 @@ def _parse_cicd(product: DataProduct) -> dict:
 
 
 class CiCdGenerator(BaseGenerator):
+    """Generates the primary deployment pipeline file for this product."""
+
     def applicable(self, product: DataProduct) -> bool:
         return True  # always generate a CI/CD pipeline
 

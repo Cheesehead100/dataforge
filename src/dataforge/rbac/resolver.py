@@ -1,4 +1,13 @@
-"""Resolves a FlowGraph into the complete set of RBAC role assignments."""
+"""
+RBAC resolver — walks a FlowGraph and emits the required Azure role assignments.
+
+This module is the bridge between the graph model and the RBAC matrix.  For each
+directed edge in the graph it looks up the (principal_type, scope_type, operation)
+triple in matrix.py, converts matching rows into RoleAssignment objects, deduplicates
+by Terraform resource key, and surfaces SQL MI data-plane login requirements as
+human-readable warnings (since those cannot be expressed as Azure RBAC assignments).
+The output RbacResult is consumed directly by the renderer to produce ``rbac.tf``.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +35,10 @@ class RbacResolver:
             scope_node = graph.node(edge.target)
 
             if principal_node.type not in PRINCIPAL_NODE_TYPES:
-                # Source cannot hold a managed identity; skip silently.
+                # Only compute/orchestration node types (ADF, Databricks, AKS, etc.)
+                # have managed identities that can be assigned Azure roles.  Storage
+                # or data nodes that appear as edge sources (e.g. ADLS as an input)
+                # are silently skipped because they act as scopes, not principals.
                 continue
 
             new_assignments, new_unresolved, new_warnings = self._edge_to_assignments(
@@ -34,6 +46,9 @@ class RbacResolver:
             )
 
             for ra in new_assignments:
+                # Deduplicate by Terraform resource key so that two edges that
+                # resolve to the same (principal, scope, role) produce exactly one
+                # azurerm_role_assignment block in the generated HCL.
                 key = ra.terraform_key
                 if key not in assignments:
                     assignments[key] = ra
@@ -54,6 +69,13 @@ class RbacResolver:
         principal_type: NodeType,
         scope_type: NodeType,
     ) -> tuple[list[RoleAssignment], list[RbacKey], list[str]]:
+        """Convert a single graph edge into zero or more RoleAssignment objects.
+
+        Returns a 3-tuple: (assignments, unresolved_keys, warnings).  An empty
+        role_names list from the matrix means the edge is unrecognised and goes
+        into unresolved rather than raising an exception, so new node-type pairs
+        degrade gracefully with a warning instead of aborting generation.
+        """
         role_names = lookup(principal_type, scope_type, edge.operation)
         key = RbacKey(
             principal_node_type=principal_type,
