@@ -1,4 +1,11 @@
-"""SreDashboardGenerator — Azure Monitor Workbook + runbook per product (L9)."""
+"""SreDashboardGenerator — Azure Monitor Workbook, workbook JSON, and Markdown runbook (L9).
+
+Generates three files for every product: a Terraform resource that deploys the
+workbook (sre/workbook.tf), the workbook content as a parameterized JSON template
+(sre/workbook.json), and an operator runbook (sre/runbook.md) with escalation
+steps, SLA thresholds, and quality table references. Runs unconditionally so
+every generated stack has an SRE starting point.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +27,8 @@ def _safe_id(value: str) -> str:
 
 
 class SreDashboardGenerator(BaseGenerator):
+    """Generates an Azure Monitor Workbook and operator runbook for every product."""
+
     def applicable(self, product: DataProduct) -> bool:
         return True  # every product gets an SRE dashboard
 

@@ -1,4 +1,13 @@
-"""DataForge CLI — the single user-facing entry point."""
+"""
+DataForge CLI — the single user-facing entry point for all terminal workflows.
+
+Exposes five Click commands: ``generate`` (NL description or YAML → ZIP of Terraform
+files), ``plan`` (dry-run RBAC preview), ``explain`` (FlowGraph inspection),
+``validate`` (run checkov/tfsec/infracost on an existing directory), ``portal``
+(launch the FastAPI web UI), and ``doctor`` / ``import-adf`` for diagnostics and ADF
+migration.  All generation commands follow the same pipeline: parse → RbacResolver →
+HclGenerator/DataProductGenerator → OutputWriter, then optionally CheckovRunner.
+"""
 
 from __future__ import annotations
 
@@ -37,7 +46,9 @@ from dataforge.validation.checkov_runner import CheckovRunner
 from dataforge.validation.tfsec_runner import TfsecRunner
 from dataforge.validation.infracost_runner import InfracostRunner
 
-console = Console(legacy_windows=False)  # use Python I/O path; avoids CP1252 LegacyWindowsTerm
+# legacy_windows=False forces the Python I/O path on Windows, avoiding the CP1252
+# LegacyWindowsTerm fallback that mangles Rich colour codes and Unicode symbols.
+console = Console(legacy_windows=False)
 
 
 @click.group()
@@ -97,7 +108,9 @@ def generate(
         console.print("[red]Error:[/red] Provide either a DESCRIPTION argument or --from <file>.")
         sys.exit(1)
 
-    # ── YAML path (no LLM needed for parsing) ────────────────────────────────
+    # ── YAML path ────────────────────────────────────────────────────────────
+    # Explicit YAML skips the LLM parsing step entirely; the graph is built
+    # deterministically from the data-product.yaml schema via IntentResolver.
     if from_file:
         try:
             product = YamlParser().parse_file(from_file)
@@ -166,6 +179,9 @@ def generate(
         return
 
     # ── NL path — requires an LLM provider ───────────────────────────────────
+    # Natural-language input is sent to the configured LLM (IntentParser) to
+    # extract a structured FlowGraph.  Enforce the length cap here, before
+    # initialising the adapter, to avoid an unnecessary API-key round-trip.
     if len(description) > IntentParser.MAX_DESCRIPTION_LEN:
         console.print(
             f"[red]Error:[/red] Description too long "
@@ -352,6 +368,9 @@ def plan(
     console.print(f"\n[bold]Planned:[/bold] {len(rbac.assignments)} role assignments, {len(rbac.unresolved)} unresolved")
 
     # ── Azure comparison ──────────────────────────────────────────────────────
+    # The comparison is role-name–only; scopes and principal IDs differ between
+    # the planned Terraform expressions and the live Azure resource IDs, so a
+    # perfect semantic diff is not possible without `terraform plan` output.
     if compare_azure:
         _compare_with_azure(rbac, resource_group, subscription_id)
 
@@ -733,7 +752,9 @@ def _compare_with_azure(rbac, resource_group: str, subscription_id: str | None) 
         console.print("[red]Could not parse az CLI output.[/red]")
         return
 
-    # Index existing roles by role definition name (display name)
+    # Index by display name only — `az role assignment list` returns the display
+    # name in roleDefinitionName, which aligns with the role_name strings used
+    # throughout the RBAC matrix and RoleAssignment model.
     existing_roles: set[str] = {
         a.get("roleDefinitionName", "") for a in existing if a.get("roleDefinitionName")
     }

@@ -1,3 +1,13 @@
+{#
+  fabric.tf.j2 — Microsoft Fabric workspace + Lakehouse per Fabric node.
+  Provisions: fabric_workspace and fabric_lakehouse via the microsoft/fabric provider.
+  Context vars: fabric_nodes, app_name, env.
+  Env logic: none — workspace naming uses app_name + env suffix.
+  Constraint: An F-SKU Fabric capacity must already exist; set capacity_id by
+  uncommenting the variable and supplying the capacity resource ID.
+  The microsoft/fabric provider (v1.11+) is only included when fabric_nodes is
+  non-empty (see providers.tf.j2).
+#}
 {% for node in fabric_nodes %}
 # Microsoft Fabric Lakehouse
 # Fabric resources are managed via the Microsoft Fabric admin portal or the

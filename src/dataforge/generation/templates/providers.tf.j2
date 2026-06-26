@@ -1,3 +1,11 @@
+{#
+  providers.tf.j2 — Terraform required_providers and provider configuration.
+  Provisions: azurerm provider block; optional databricks and fabric providers.
+  Context vars: databricks_nodes (list), fabric_nodes (list).
+  Env logic: none — provider config is environment-agnostic.
+  Constraint: databricks provider points at the first workspace only; multi-workspace
+  stacks must add additional provider aliases manually.
+#}
 terraform {
   required_version = ">= 1.7"
 

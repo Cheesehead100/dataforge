@@ -1,9 +1,12 @@
 """
-RBAC Matrix — the core IP of DataForge.
+RBAC Matrix — static lookup table: (principal, scope, operation) → Azure role names.
 
-Maps (principal_node_type, scope_node_type, operation) → list[role_name].
-Every combination a real Azure data engineering stack needs is enumerated here.
-The resolver consumes this table deterministically; no LLM is involved.
+This is the authoritative source of truth for which Azure built-in roles DataForge
+assigns.  Every (NodeType principal, NodeType scope, OperationType) triple that can
+appear in a generated FlowGraph must have an entry here; unrecognised triples fall
+through to RbacResult.unresolved warnings rather than hard errors, so adding new
+node types is safe as long as this table is updated in parallel.  The resolver
+consumes this table deterministically — no LLM is involved in role selection.
 """
 
 from __future__ import annotations

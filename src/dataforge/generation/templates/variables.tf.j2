@@ -1,3 +1,14 @@
+{#
+  variables.tf.j2 — Terraform input variable declarations for the generated stack.
+  Provisions: common vars (env, location, resource_group, app_name, tags);
+  conditional networking vars for Databricks VNet injection; per-node SP object ID
+  vars for Databricks and Fabric; SQL MI subnet var; AKS workload-identity vars.
+  Context vars: env, location, resource_group, app_name, tags,
+  databricks_nodes, fabric_nodes, sql_mi_nodes, aks_nodes.
+  Env logic: none — defaults are baked in, overridden per environment via tfvars.
+  Constraint: azurerm_client_config + azurerm_resource_group data sources are
+  appended here (not in a separate file) to avoid splitting required data lookups.
+#}
 variable "environment" {
   description = "Deployment environment (dev, test, prod)"
   type        = string

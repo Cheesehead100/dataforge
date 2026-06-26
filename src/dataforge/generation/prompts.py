@@ -1,4 +1,10 @@
-"""Prompt builders for the Sonnet HCL polish pass."""
+"""Prompt builders for the Sonnet HCL polish pass.
+
+Defines the system prompt and per-file user message sent to the LLM during
+HclGenerator's optional Phase 2 polish step. Keeping prompts here — separate
+from the generator logic — makes it easy to tune LLM behaviour without touching
+the rendering pipeline.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +29,12 @@ RULES:
 
 
 def build_generate_messages(skeleton: str, graph: FlowGraph) -> list[dict]:
+    """Build the user-turn message list for the LLM polish call.
+
+    Injects metadata (environment, sensitivity, region) so the LLM can apply
+    context-appropriate defaults (e.g. CMK encryption for confidential workloads)
+    without being given the full graph object.
+    """
     return [
         {
             "role": "user",

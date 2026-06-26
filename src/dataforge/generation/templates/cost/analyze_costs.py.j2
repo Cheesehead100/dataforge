@@ -1,3 +1,14 @@
+{#
+  cost/analyze_costs.py.j2 — Python script for Databricks cluster rightsizing analysis.
+  Queries Azure Monitor (DBUConsumed metric) and Cost Management for last-30-day
+  spend, then produces downsize/spot/auto-termination recommendations.
+  Context vars: product_name, env, app, metadata, max_workers, node_type,
+  thresholds (cpu_low_pct, savings_threshold_usd), monthly_budget_usd.
+  Env logic: none — analysis is read-only and environment-agnostic.
+  Constraint: Falls back to synthetic mock data if azure-monitor-query is not
+  installed, enabling dry-run in CI without Azure credentials. Exits 2 (not 1) on
+  high-priority recommendations so CI can surface them without blocking the build.
+#}
 #!/usr/bin/env python3
 """
 DataForge Cost Optimization Analyser — {{ product_name }}

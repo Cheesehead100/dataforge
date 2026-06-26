@@ -1,4 +1,12 @@
-"""Parses data-product.yaml into a DataProduct model."""
+"""Parses a data-product YAML file or string into a validated DataProduct model.
+
+This module is the first step of the YAML-based (no-LLM) pipeline entry point:
+  data-product.yaml → YamlParser → DataProduct → IntentResolver → FlowGraph
+
+YamlParser converts parse errors from PyYAML and Pydantic into the same
+ParseError type that IntentParser raises, so callers can handle both paths
+with a single except clause.
+"""
 
 from __future__ import annotations
 
@@ -37,7 +45,9 @@ class YamlParser:
         try:
             return DataProduct.model_validate(data)
         except ValidationError as exc:
-            # Surface the first meaningful error message
+            # Surface the first error message rather than the full Pydantic dump,
+            # which can be several hundred characters and obscures the root cause
+            # when reported back to the user.
             first = exc.errors()[0]
             msg = first.get("msg", str(exc))
             raise ParseError(msg) from exc

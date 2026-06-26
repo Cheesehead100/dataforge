@@ -147,7 +147,13 @@ _SINGLETON_TYPES = {NodeType.KEY_VAULT, NodeType.DATABRICKS, NodeType.ADF,
 
 
 def _build_pe_specs(graph: FlowGraph) -> tuple[list[_PeSpec], list[_DnsZoneSpec]]:
-    """Return (pe_specs, dns_zone_specs) for all PE-capable services in the graph."""
+    """Return (pe_specs, dns_zone_specs) for all PE-capable services in the graph.
+
+    ADLS nodes each get two PEs (blob + dfs) because hierarchical namespace requires
+    the dfs sub-resource for Data Lake access. Non-ADLS singleton types (Key Vault,
+    Databricks, ADF, SQL MI, Event Hub) generate one PE regardless of how many nodes
+    of that type appear in the graph — the dedup guard prevents duplicate TF resources.
+    """
     pe_specs: list[_PeSpec] = []
     seen_singletons: set[NodeType] = set()
     dns_zone_keys_needed: set[str] = set()
@@ -180,6 +186,7 @@ def _private_endpoints_enabled(product: DataProduct) -> bool:
 
 
 class NetworkingGenerator(BaseGenerator):
+    """Generates private endpoint, DNS zone, and deployment sequencing files when PE is enabled."""
 
     def applicable(self, product: DataProduct) -> bool:
         return _private_endpoints_enabled(product)

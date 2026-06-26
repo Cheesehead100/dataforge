@@ -1,4 +1,12 @@
-"""Azure built-in role catalog: display name → role definition GUID."""
+"""
+Azure built-in role catalog: display name → role definition GUID.
+
+Provides the stable GUID for every built-in role used by the RBAC matrix so that
+generated ``azurerm_role_assignment`` resources reference the role by its immutable
+definition ID rather than its display name (which can technically be renamed).
+Add new roles here whenever matrix.py gains a new role name; the role_definition_id()
+helper will raise clearly if a role name exists in the matrix but not in this catalog.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +34,12 @@ AZURE_ROLES: dict[str, str] = {
 
 
 def role_definition_id(role_name: str) -> str:
-    """Return the Azure role definition GUID for a given role display name."""
+    """Return the Azure role definition GUID for a given role display name.
+
+    Raises ValueError (not KeyError) so the caller gets a human-readable message
+    that lists all known role names, making it obvious when a new matrix entry
+    was added without a corresponding AZURE_ROLES entry.
+    """
     try:
         return AZURE_ROLES[role_name]
     except KeyError as exc:

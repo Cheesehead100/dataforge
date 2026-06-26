@@ -1,4 +1,13 @@
-"""Runs Checkov against generated Terraform and parses the results."""
+"""
+Checkov runner — invokes the checkov IaC scanner and parses its JSON report.
+
+This is the default post-generation security gate in the CLI ``generate`` command
+and the standalone ``validate`` command.  Checkov is invoked as a subprocess via
+``sys.executable -m checkov`` (rather than the PATH binary) so it always uses the
+same Python environment as DataForge, avoiding version mismatches.  The JSON output
+schema normalisation handles both the single-dict and list-of-framework-results
+formats that checkov emits depending on its version and ``--framework`` flag.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 class CheckovFinding(BaseModel):
+    """A single failed Checkov check, extracted from the JSON results block."""
+
     check_id: str
     check_type: str
     resource: str
@@ -27,6 +38,8 @@ class CheckovFinding(BaseModel):
 
 
 class CheckovReport(BaseModel):
+    """Aggregated results from a checkov scan run."""
+
     passed: int = 0
     failed: int = 0
     skipped: int = 0
@@ -72,9 +85,10 @@ class CheckovRunner:
 
         raw = result.stdout
 
-        # Non-zero exit with no JSON output means checkov itself failed to run
-        # (e.g. ModuleNotFoundError, syntax error, no TF files found).
-        # Treat this as a validation failure rather than silently returning ok=True.
+        # Exit code 1 is normal for checkov when checks fail; only treat it as an
+        # error when there is also no JSON output, which indicates checkov failed to
+        # run at all (e.g. ModuleNotFoundError, no .tf files found in the directory).
+        # Returning ok=True in that case would silently skip security validation.
         if result.returncode not in (0, 1) and not raw.strip():
             logger.warning("checkov exited %d with no JSON output; stderr: %s",
                            result.returncode, result.stderr[:500])
@@ -95,7 +109,8 @@ class CheckovRunner:
             logger.debug("Checkov JSON parse error; raw: %s", raw[:500])
             return CheckovReport(raw_output=raw)
 
-        # checkov can emit a list of framework results or a single dict
+        # Checkov emits a list when multiple frameworks are scanned, or a dict
+        # when a single framework is specified via --framework.  Normalise to dict.
         if isinstance(data, list):
             data = data[0] if data else {}
 

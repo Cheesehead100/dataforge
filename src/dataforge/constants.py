@@ -1,9 +1,17 @@
-"""Shared enumerations — the vocabulary the entire system uses."""
+"""Shared enumerations and constants used across every layer of DataForge.
+
+This module is the single source of truth for the typed vocabulary (node types,
+edge operations, principal types, data sensitivity levels) that the models,
+parsing layer, RBAC resolver, and Jinja2 templates all import from. Keeping
+them here avoids string literals scattered across the codebase.
+"""
 
 from enum import StrEnum
 
 
 class NodeType(StrEnum):
+    """All Azure resource types that can appear as nodes in a FlowGraph."""
+
     ADF = "adf"                        # Azure Data Factory
     DATABRICKS = "databricks"          # Azure Databricks workspace
     FABRIC_LAKEHOUSE = "fabric_lakehouse"  # Microsoft Fabric Lakehouse
@@ -16,6 +24,8 @@ class NodeType(StrEnum):
 
 
 class OperationType(StrEnum):
+    """The set of allowed edge operations, each mapped to a distinct RBAC role by the resolver."""
+
     READ = "read"
     WRITE = "write"
     TRIGGER = "trigger"        # orchestration hop (e.g. ADF triggers Databricks)
@@ -25,11 +35,15 @@ class OperationType(StrEnum):
 
 
 class PrincipalType(StrEnum):
+    """Who holds the permission in a role assignment. Only managed identities are supported today."""
+
     MANAGED_IDENTITY = "managed_identity"
     SERVICE_PRINCIPAL = "service_principal"  # Phase 2
 
 
 class DataSensitivity(StrEnum):
+    """Data classification tier — influences network and key vault policy in generated Terraform."""
+
     PUBLIC = "public"
     INTERNAL = "internal"
     CONFIDENTIAL = "confidential"

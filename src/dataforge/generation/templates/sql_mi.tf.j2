@@ -1,3 +1,14 @@
+{#
+  sql_mi.tf.j2 — Azure SQL Managed Instance per SQL MI node.
+  Provisions: azurerm_mssql_managed_instance (GP_Gen5, 4 vCores, 32 GB) with
+  SystemAssigned managed identity.
+  Context vars: sql_mi_nodes.
+  Env logic: none — instance size is fixed at generation time.
+  Constraint: The target subnet (var.sql_mi_subnet_id) must be dedicated to SQL MI
+  with Microsoft.Sql/managedInstances delegation — no other resources can share it.
+  Managed Identity logins must be created via T-SQL after provisioning (see inline
+  comments); these cannot be expressed as Terraform resources.
+#}
 {% for node in sql_mi_nodes %}
 # SQL Managed Instance — subnet must be dedicated to SQL MI
 resource "azurerm_mssql_managed_instance" "{{ node.id }}" {

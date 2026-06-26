@@ -1,4 +1,13 @@
-"""DataForge self-service portal — FastAPI application."""
+"""
+DataForge self-service portal — FastAPI web application.
+
+Provides a browser-based form where data engineers describe a pipeline and receive
+a downloadable ZIP of production-ready Terraform (plus CI/CD and monitoring config).
+The two primary API endpoints, ``/api/preview`` and ``/api/generate``, follow the
+same pipeline as the CLI: YAML build → YamlParser → IntentResolver → RbacResolver →
+HclGenerator/DataProductGenerator.  All endpoints are protected by a per-session
+bearer-token nonce and a sliding-window rate limiter enforced in _SecurityMiddleware.
+"""
 
 from __future__ import annotations
 
@@ -32,10 +41,17 @@ from dataforge.rbac.resolver import RbacResolver
 # When unset the portal generates a random per-session nonce; the nonce is
 # injected into the served HTML page so the browser JS can include it as a
 # bearer token on every API call, giving CSRF protection without user friction.
+#
+# The nonce is intentionally per-process (not per-request) so the same browser
+# session stays valid across multiple API calls without a login flow.  A new
+# process (server restart) automatically invalidates any previously issued nonce,
+# which is sufficient protection for a local/intranet self-hosted tool.
 _PORTAL_TOKEN: str = os.environ.get("DATAFORGE_PORTAL_TOKEN", "")
 _SESSION_NONCE: str = _PORTAL_TOKEN or secrets.token_urlsafe(32)
 
 # Rate-limiting sliding-window state (in-memory, resets on server restart).
+# /generate is kept tighter (5 rpm) because it invokes HclGenerator and
+# DataProductGenerator synchronously, both of which are CPU-bound.
 _RATE_WINDOWS: dict[str, deque[float]] = defaultdict(deque)
 _LIMIT_GENERATE = (5, 60.0)   # 5 requests per 60 s for the expensive /generate endpoint
 _LIMIT_PREVIEW  = (20, 60.0)  # 20 requests per 60 s for /preview
@@ -48,7 +64,12 @@ _SCHEMA_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 def _rate_exceeded(ip: str, key: str, max_req: int, window_s: float) -> bool:
-    """Sliding-window rate limiter.  Returns True when the limit is exceeded."""
+    """Sliding-window rate limiter.  Returns True when the limit is exceeded.
+
+    Each (ip, key) pair gets its own deque of request timestamps.  Entries older
+    than window_s are evicted before checking the count, implementing a true
+    sliding window rather than a fixed-interval bucket.
+    """
     bucket = _RATE_WINDOWS[f"{ip}:{key}"]
     now = time.monotonic()
     while bucket and now - bucket[0] > window_s:
@@ -74,6 +95,9 @@ class _SecurityMiddleware(BaseHTTPMiddleware):
       1. CSRF — reject cross-origin POST/PUT/DELETE without a valid session token.
       2. Rate limiting — protect expensive endpoints from abuse.
       3. Security headers — added to every response.
+
+    Bundling all three in one middleware ensures they run unconditionally before
+    any route handler, regardless of FastAPI dependency injection order.
     """
 
     _SAFE_ORIGINS = ("http://localhost", "http://127.0.0.1", "https://localhost")
@@ -87,6 +111,8 @@ class _SecurityMiddleware(BaseHTTPMiddleware):
             if origin and not any(origin.startswith(o) for o in self._SAFE_ORIGINS):
                 auth = request.headers.get("Authorization", "")
                 token = auth.removeprefix("Bearer ").strip()
+                # compare_digest performs a constant-time comparison to prevent
+                # timing attacks that could reveal the nonce one byte at a time.
                 if not token or not secrets.compare_digest(token, _SESSION_NONCE):
                     return Response(
                         content='{"detail":"Cross-origin request rejected"}',
@@ -141,8 +167,13 @@ def _require_token(
     The portal HTML page has the nonce injected at serve time, so legitimate
     browser usage is transparent.  Direct API access requires knowing the nonce
     (or the value of DATAFORGE_PORTAL_TOKEN for persistent deployments).
+
+    This dependency is separate from _SecurityMiddleware's CSRF check: the
+    middleware guards cross-origin requests by Origin header, while this
+    dependency enforces authentication on same-origin direct API calls too.
     """
     token = creds.credentials if creds else ""
+    # Constant-time compare here for the same reason as in the middleware.
     if not token or not secrets.compare_digest(token, _SESSION_NONCE):
         raise HTTPException(
             status_code=401,
@@ -166,6 +197,12 @@ class QualityCheck(BaseModel):
 
 
 class GenerateRequest(BaseModel):
+    """Full generation request submitted by the portal form.
+
+    All string fields use Pydantic Literal types or regex patterns so that
+    invalid values are rejected before they reach any generator or YAML builder.
+    """
+
     product:      str = Field(..., min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_\-]+$")
     source_type:  Literal["sqlserver", "blob_storage", "eventhub", "adls", "sql_mi"]
     target_type:  Literal["adls", "fabric", "databricks", "fabric_lakehouse"]
@@ -221,6 +258,13 @@ class GenerateRequest(BaseModel):
 
 
 class PreviewRequest(BaseModel):
+    """Lightweight request for the /api/preview endpoint.
+
+    Contains the subset of GenerateRequest fields needed to build and parse the
+    YAML for visual graph feedback.  Does not include region, resource_group, or
+    catalog because those are cosmetic at preview time.
+    """
+
     product:      str = Field(..., min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_\-]+$")
     source_type:  Literal["sqlserver", "blob_storage", "eventhub", "adls", "sql_mi"]
     target_type:  Literal["adls", "fabric", "databricks", "fabric_lakehouse"]
@@ -356,6 +400,9 @@ async def index() -> HTMLResponse:
         raise HTTPException(status_code=500, detail="Portal static assets not found")
     html = html_path.read_text(encoding="utf-8")
     # Inject the per-session nonce so the browser JS can authenticate API calls.
+    # The nonce is embedded directly into the served HTML so the browser JS can
+    # read it from window.__DF_TOKEN and attach it as `Authorization: Bearer <nonce>`
+    # on every /api/* call.  The placeholder comment is the injection point.
     html = html.replace(
         "<!-- DATAFORGE_TOKEN_INJECT -->",
         f'<script>window.__DF_TOKEN = "{_SESSION_NONCE}";</script>',
@@ -402,7 +449,8 @@ async def generate(req: GenerateRequest) -> StreamingResponse:
 
     rbac = RbacResolver().resolve(graph)
 
-    # Portal always uses skeleton-only mode (no LLM polish) so no API key is needed.
+    # The portal runs skeleton-only mode (llm_polish=False, client=None) so the
+    # web server does not need an LLM API key and generation stays fast (<1 s).
     tf_result = HclGenerator(Renderer(), None).generate(graph, rbac, llm_polish=False)
     platform_result = DataProductGenerator().generate(product, graph, rbac)
 

@@ -1,3 +1,13 @@
+{#
+  key_vault.tf.j2 — Azure Key Vault per Key Vault node.
+  Provisions: azurerm_key_vault with RBAC auth, purge protection, 90-day soft
+  delete, and public_network_access_enabled=false.
+  Context vars: kv_nodes.
+  Env logic: none — Key Vault is hardened identically in all environments.
+  Constraint: RBAC mode (rbac_authorization_enabled=true) is used instead of
+  access policies; ensure the Terraform service principal has Key Vault
+  Administrator on the vault scope before running apply.
+#}
 {% for node in kv_nodes %}
 resource "azurerm_key_vault" "{{ node.id }}" {
   name                          = "kv-${var.application_name}-${var.environment}"

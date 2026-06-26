@@ -1,4 +1,10 @@
-"""CostOptimizationGenerator — utilization analyser + weekly scheduled CI job (L9)."""
+"""CostOptimizationGenerator — utilization analysis script and weekly scheduled CI job (L9).
+
+Generates a Python cost-analysis script (scripts/analyze_costs.py) that queries
+Azure Monitor metrics and recommends right-sizing or auto-termination actions when
+cluster utilization falls below the configured thresholds. Also generates a weekly
+CI pipeline that runs the script and posts results back to the PR or pipeline summary.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +26,8 @@ _DEFAULT_THRESHOLDS = {
 
 
 class CostOptimizationGenerator(BaseGenerator):
+    """Generates a cost analysis script and a weekly scheduled pipeline for every product."""
+
     def applicable(self, product: DataProduct) -> bool:
         return True  # all products get cost optimization
 

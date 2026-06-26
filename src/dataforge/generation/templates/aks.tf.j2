@@ -1,3 +1,14 @@
+{#
+  aks.tf.j2 — AKS cluster + Spark node pool + Workload Identity federation per AKS node.
+  Provisions: azurerm_user_assigned_identity (workload UAMI), azurerm_kubernetes_cluster
+  (Azure CNI, OIDC issuer enabled), azurerm_kubernetes_cluster_node_pool (Spark
+  workload pool), and azurerm_federated_identity_credential.
+  Context vars: aks_nodes, app_name, env.
+  Env logic: none — cluster sizing is fixed at generation time.
+  Constraint: After apply, annotate the Spark ServiceAccount with
+  azure.workload.identity/client-id=<workload_client_id output> so pods can
+  acquire Azure tokens via the federated credential without PAT secrets.
+#}
 {% for node in aks_nodes %}
 # ── AKS cluster: {{ node.name }} ──────────────────────────────────────────────
 

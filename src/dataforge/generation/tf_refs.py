@@ -4,6 +4,10 @@ These functions map a FlowNode to the azurerm expression that resolves its
 managed-identity principal_id (for RBAC assignments) or its resource ID (scope).
 They are injected into the Jinja2 context so rbac.tf.j2 emits valid HCL instead
 of TODO placeholders.
+
+Both functions are pure: given the same node they always return the same string.
+When a new NodeType is added to constants.py, a corresponding case must be added
+to both functions here or generation will raise ValueError at render time.
 """
 
 from __future__ import annotations
