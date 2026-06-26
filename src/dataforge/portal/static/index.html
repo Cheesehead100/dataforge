@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DataForge — Self-Service Data Platform</title>
+<!-- DATAFORGE_TOKEN_INJECT -->
 <style>
   :root {
     --bg: #0f1117;
@@ -341,7 +342,7 @@
     const tag = document.createElement('div');
     tag.className = 'tag';
     tag.dataset.value = val;
-    tag.innerHTML = `${val} <button onclick="removeTag(this)">×</button>`;
+    tag.innerHTML = `${escapeHtml(val)} <button onclick="removeTag(this)">×</button>`;
     document.getElementById('schemas-container').insertBefore(tag, input);
   }
 
@@ -440,8 +441,10 @@
       return;
     }
     const html = nodes.map(n => {
-      const cls = `node-type-${n.type}`;
-      return `<div class="node-pill ${cls}"><div class="node-dot"></div><span class="node-name">${n.name}</span><span class="node-type">${n.type}</span></div>`;
+      const safeType = escapeHtml(n.type);
+      const safeName = escapeHtml(n.name);
+      const cls = `node-type-${safeType.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+      return `<div class="node-pill ${cls}"><div class="node-dot"></div><span class="node-name">${safeName}</span><span class="node-type">${safeType}</span></div>`;
     }).join('');
     document.getElementById('nodes-panel').innerHTML = `<div class="nodes-list">${html}</div>`;
   }
@@ -463,7 +466,10 @@
     try {
       const res = await fetch('/api/preview', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${window.__DF_TOKEN || ''}`,
+        },
         body: JSON.stringify(data),
       });
       const json = await res.json();
@@ -510,7 +516,10 @@
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${window.__DF_TOKEN || ''}`,
+        },
         body: JSON.stringify(data),
       });
 

@@ -9,15 +9,20 @@ resource "azurerm_storage_account" "{{ node.id }}" {
   is_hns_enabled           = true   # ADLS Gen2 hierarchical namespace
   tags                     = var.tags
 
-  # Set to false + configure network_rules.ip_rules for production (requires private agent or VNet).
-  public_network_access_enabled        = true
+  # prod: deny all public traffic — access via private endpoints only.
+  # dev/test: allow public access so Terraform data-plane ops work without a private agent.
+  public_network_access_enabled        = {{ "false" if env == "prod" else "true" }}
   allow_nested_items_to_be_public      = false
   infrastructure_encryption_enabled    = true
   min_tls_version                      = "TLS1_2"
 
   network_rules {
-    default_action = "Allow"
+    default_action = "{{ "Deny" if env == "prod" else "Allow" }}"
     bypass         = ["AzureServices"]
+{% if env == "prod" %}
+    # Add ip_rules or virtual_network_subnet_ids to permit your Terraform runner / pipeline agent.
+    # ip_rules = ["<your-agent-ip>/32"]
+{% endif %}
   }
 }
 

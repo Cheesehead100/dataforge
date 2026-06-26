@@ -166,10 +166,15 @@ def generate(
         return
 
     # ── NL path — requires an LLM provider ───────────────────────────────────
+    if len(description) > IntentParser.MAX_DESCRIPTION_LEN:
+        console.print(
+            f"[red]Error:[/red] Description too long "
+            f"({len(description)} chars, max {IntentParser.MAX_DESCRIPTION_LEN})."
+        )
+        sys.exit(1)
+
     settings = get_settings()
     try:
-        # build_adapter() reads DATAFORGE_LLM_PROVIDER and the appropriate API key.
-        # It raises ValueError with a helpful message if the key is missing.
         adapter = build_adapter(settings)
     except (ValueError, ImportError) as exc:
         console.print(f"[red]LLM configuration error:[/red] {exc}")
@@ -307,6 +312,13 @@ def plan(
     Example:
         dataforge plan "ADF reads ADLS and triggers Databricks" --compare-azure --resource-group rg-myapp
     """
+    if len(description) > IntentParser.MAX_DESCRIPTION_LEN:
+        console.print(
+            f"[red]Error:[/red] Description too long "
+            f"({len(description)} chars, max {IntentParser.MAX_DESCRIPTION_LEN})."
+        )
+        sys.exit(1)
+
     settings = get_settings()
     try:
         adapter = build_adapter(settings)
@@ -350,6 +362,13 @@ def plan(
 @click.option("--env", default="dev", show_default=True)
 def explain(description: str, region: str, env: str) -> None:
     """Parse a description and show the FlowGraph + RBAC plan without writing files."""
+    if len(description) > IntentParser.MAX_DESCRIPTION_LEN:
+        console.print(
+            f"[red]Error:[/red] Description too long "
+            f"({len(description)} chars, max {IntentParser.MAX_DESCRIPTION_LEN})."
+        )
+        sys.exit(1)
+
     settings = get_settings()
     try:
         adapter = build_adapter(settings)

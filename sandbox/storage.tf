@@ -1,3 +1,7 @@
+# WARNING — SANDBOX ONLY.  public_network_access_enabled=true and
+# network_rules.default_action="Allow" are intentionally open for local Terraform
+# data-plane operations.  Production storage must deny public access and use
+# private endpoints or an explicit ip_rules allowlist.
 resource "azurerm_storage_account" "main" {
   name                     = "st${replace(local.prefix, "-", "")}001"
   resource_group_name      = azurerm_resource_group.main.name
